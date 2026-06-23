@@ -404,12 +404,14 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
   const started = useRef(false);
   const [rateBusy, setRateBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [stars, setStars] = useState(0); // selected rating, 0 = none yet
 
-  const ratePartner = async (n: number) => {
-    if (rateBusy || !v.partner) { onClose(); return; }
+  const submitRating = async () => {
+    if (rateBusy) return;
+    if (!stars || !v.partner) { onClose(); return; }
     setRateBusy(true);
-    haptic("light");
-    try { await api.ratePartner(v.partner.id, n); toast.success("Rahmat!"); }
+    haptic("medium");
+    try { await api.ratePartner(v.partner.id, stars); toast.success("Rahmat!"); }
     catch { /* non-blocking */ }
     onClose();
   };
@@ -507,12 +509,22 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
             </p>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} onClick={() => ratePartner(n)} disabled={rateBusy} className="p-1">
-                  <Star className="w-9 h-9 text-yellow-400" strokeWidth={1.5} />
+                <button key={n} onClick={() => { haptic("light"); setStars(n); }} disabled={rateBusy} className="p-1 transition-transform active:scale-90">
+                  <Star
+                    className={cn("w-9 h-9 transition-colors", n <= stars ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground")}
+                    strokeWidth={1.5}
+                  />
                 </button>
               ))}
             </div>
-            <button onClick={onClose} className="text-sm text-muted-foreground underline">
+            <button
+              onClick={submitRating}
+              disabled={rateBusy || stars === 0}
+              className="bg-orange-500 text-white text-sm font-bold px-8 py-3 rounded-2xl disabled:opacity-40 transition-opacity"
+            >
+              {rateBusy ? "Yuborilmoqda…" : "Baholash"}
+            </button>
+            <button onClick={onClose} disabled={rateBusy} className="text-sm text-muted-foreground underline disabled:opacity-40">
               O'tkazib yuborish
             </button>
           </>
@@ -601,10 +613,12 @@ function LeaderboardScreen() {
 
   const rows = data
     ? [...data.week]
-        .filter((r) => (activeTab === "rated" ? r.rating_count >= 3 : true)) // need ≥3 ratings to rank
+        .filter((r) => (activeTab === "rated" ? r.rating_count >= 1 : true)) // any rating qualifies
         .sort((a, b) =>
           activeTab === "streak" ? b.streak - a.streak
-          : activeTab === "rated" ? b.rating - a.rating
+          // Top Rated: highest avg first; break ties by who has more ratings,
+          // then by minutes — so a 5.0 from 10 raters outranks a 5.0 from 1.
+          : activeTab === "rated" ? (b.rating - a.rating) || (b.rating_count - a.rating_count) || (b.minutes - a.minutes)
           : b.minutes - a.minutes
         )
     : [];
