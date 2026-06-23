@@ -101,7 +101,7 @@ function useTelegram() {
 // Types & utilities
 // ---------------------------------------------------------------------------
 type NavTab = "speaking" | "leaderboard" | "invite" | "profile";
-type SubPage = "premium" | "progress" | "history" | "feedback" | "questions";
+type SubPage = "progress" | "history" | "feedback" | "questions";
 type LeaderTab = "speakers" | "rated" | "streak";
 
 function cn(...classes: (string | false | undefined | null)[]) {
@@ -278,87 +278,17 @@ function LeaderboardSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Daily channel-join bonus card
-// ---------------------------------------------------------------------------
-function BonusCard({ onChanged }: { onChanged: () => void }) {
-  const { tg, haptic, hapticNotify } = useTelegram();
-  const toast = useToast();
-  const [bonus, setBonus] = useState<import("./api").BonusStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api.getBonus().then(setBonus).catch(() => {});
-  }, []);
-
-  if (!bonus || bonus.claimed_today) return null;
-
-  const openChannel = () => {
-    haptic("light");
-    if (bonus.channel_username && tg?.openTelegramLink) {
-      tg.openTelegramLink(`https://t.me/${bonus.channel_username}`);
-    }
-  };
-
-  const claim = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await api.claimBonus();
-      hapticNotify("success");
-      toast.success(`+${bonus.amount} daqiqa qo'shildi`);
-      setBonus({ ...bonus, claimed_today: true });
-      onChanged();
-    } catch (e) {
-      const msg = e instanceof ApiError && e.status === 400
-        ? (e.message === "not_member"
-            ? "Avval kanalga qo'shiling"
-            : "Bugun allaqachon olgansiz")
-        : "Xatolik yuz berdi";
-      toast.error(msg);
-      if (e instanceof ApiError && e.message === "not_member") openChannel();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="px-4 pb-2">
-      <div className="bg-card border border-orange-500/30 rounded-2xl p-3.5 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-orange-500/15 flex items-center justify-center flex-shrink-0">
-          <Gift className="w-5 h-5 text-orange-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Get +{bonus.amount} free minutes today</p>
-          <p className="text-xs text-muted-foreground truncate">
-            {bonus.is_member ? "Tap claim to collect your bonus" : `Join @${bonus.channel_username || "the channel"}`}
-          </p>
-        </div>
-        <button
-          onClick={bonus.is_member ? claim : openChannel}
-          disabled={busy}
-          className="bg-orange-500 text-white text-xs font-semibold px-4 py-2 rounded-xl flex-shrink-0 disabled:opacity-60"
-        >
-          {bonus.is_member ? (busy ? "…" : "Claim") : "Join"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // SCREEN: Speaking (main)
 // ---------------------------------------------------------------------------
 function SpeakingScreen({
   user,
   history,
   onFindPartner,
-  onChanged,
   onOpenQuestions,
 }: {
   user: User;
   history: SessionHistoryItem[];
   onFindPartner: () => void;
-  onChanged: () => void;
   onOpenQuestions: () => void;
 }) {
   const { haptic } = useTelegram();
@@ -370,12 +300,6 @@ function SpeakingScreen({
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 pt-3 pb-3">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-secondary rounded-full px-3 py-1.5">
-            <Clock className="w-3.5 h-3.5 text-orange-400" />
-            <span className="text-xs font-semibold text-foreground">
-              {user.is_premium ? "Premium" : `${user.remaining_today ?? user.free_daily_minutes} min`}
-            </span>
-          </div>
           <div className="flex items-center gap-1.5 bg-secondary rounded-full px-3 py-1.5">
             <Flame className="w-3.5 h-3.5 text-orange-400" />
             <span className="text-xs font-semibold text-foreground">{user.streak}</span>
@@ -426,9 +350,6 @@ function SpeakingScreen({
           <p className="text-muted-foreground text-xs">We'll connect you with someone to practice with</p>
         </div>
       </div>
-
-      {/* Daily bonus */}
-      {!user.is_premium && <BonusCard onChanged={onChanged} />}
 
       {/* Recent sessions */}
       <div className="px-4 pb-2">
@@ -705,8 +626,8 @@ function LeaderboardScreen() {
       )}
 
       {rows.length >= 3 && (
-        <div className="px-4 pb-4">
-          <div className="flex items-end justify-center gap-3 h-28">
+        <div className="px-4 pb-4 pt-2">
+          <div className="flex items-end justify-center gap-3">
             {/* 2nd */}
             <div className="flex flex-col items-center gap-1.5 flex-1">
               <Avatar name={rows[1].name} size="md" />
@@ -789,17 +710,8 @@ function InviteScreen({ user }: { user: User }) {
   const { tg, haptic, hapticNotify } = useTelegram();
   const toast = useToast();
   const [copied, setCopied] = useState(false);
-  const [info, setInfo] = useState<import("./api").ReferralInfo | null>(null);
 
-  useEffect(() => {
-    api.getReferral().then(setInfo).catch(() => {});
-  }, []);
-
-  const refLink = info?.link ?? `https://t.me/${BOT_USERNAME}?start=ref_${user.telegram_id}`;
-  const joined = info?.joined ?? 0;
-  const next = info?.next_tier ?? null;
-  const remaining = next ? Math.max(next.friends - joined, 0) : 0;
-  const progress = next ? Math.min((joined / next.friends) * 100, 100) : 100;
+  const refLink = `https://t.me/${BOT_USERNAME}?start=ref_${user.telegram_id}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(refLink).catch(() => {});
@@ -824,25 +736,14 @@ function InviteScreen({ user }: { user: User }) {
             <Gift className="w-7 h-7 text-white" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl font-bold text-foreground">{info?.days_earned ?? 0} days of Premium earned</h2>
-            <p className="text-muted-foreground text-sm">{joined} {joined === 1 ? "friend" : "friends"} joined</p>
+            <h2 className="text-xl font-bold text-foreground">Invite your friends</h2>
+            <p className="text-muted-foreground text-sm">Practice English together on SpeakUp</p>
           </div>
         </div>
-        {next && (
-          <div className="mt-4">
-            <p className="text-sm text-foreground mb-2">
-              <span className="text-orange-400 font-semibold">{remaining} more</span> to unlock{" "}
-              <span className="font-semibold">+{next.days} {next.days === 1 ? "day" : "days"}</span>
-            </p>
-            <div className="h-2 rounded-full bg-secondary overflow-hidden">
-              <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="space-y-3">
-        <p className="text-sm font-semibold text-foreground">Your referral link</p>
+        <p className="text-sm font-semibold text-foreground">Your invite link</p>
         <div className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
           <p className="flex-1 text-xs text-muted-foreground truncate font-mono">{refLink}</p>
           <button
@@ -864,35 +765,6 @@ function InviteScreen({ user }: { user: User }) {
           <Share2 className="w-4 h-4 text-orange-400" />
           Share via Telegram
         </button>
-      </div>
-
-      <div className="space-y-2 pb-4">
-        <p className="text-sm font-semibold text-foreground">Rewards</p>
-        {(info?.tiers ?? []).map((t) => {
-          const unlocked = joined >= t.friends;
-          return (
-            <div
-              key={t.friends}
-              className={cn(
-                "flex items-center gap-3 bg-card rounded-2xl p-3.5 border",
-                unlocked ? "border-orange-500/40" : "border-border"
-              )}
-            >
-              <div className={cn(
-                "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold",
-                unlocked ? "bg-orange-500 text-white" : "bg-secondary text-muted-foreground"
-              )}>
-                {unlocked ? <CheckCircle className="w-4 h-4" /> : t.friends}
-              </div>
-              <p className="flex-1 text-sm font-semibold text-foreground">
-                {t.friends} {t.friends === 1 ? "friend" : "friends"}
-              </p>
-              <span className="text-sm font-semibold text-muted-foreground">
-                {t.days} {t.days === 1 ? "day" : "days"}
-              </span>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -937,7 +809,6 @@ function ProfileScreen({ user, onOpen }: { user: User; onOpen: (page: SubPage) =
   const username = user.username ? `@${user.username}` : `id ${user.telegram_id}`;
 
   const menu: { icon: ReactNode; label: string; page: SubPage }[] = [
-    { icon: <Crown className="w-4 h-4" />, label: "Premium", page: "premium" },
     { icon: <Star className="w-4 h-4" />, label: "My Progress", page: "progress" },
     { icon: <Clock className="w-4 h-4" />, label: "Call History", page: "history" },
     { icon: <Volume2 className="w-4 h-4" />, label: "Leave feedback", page: "feedback" },
@@ -1035,171 +906,6 @@ function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
         <ChevronLeft className="w-6 h-6" />
       </button>
       <h1 className="text-lg font-bold text-foreground">{title}</h1>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SCREEN: Premium (plans + Stars / card payment)
-// ---------------------------------------------------------------------------
-function PremiumScreen({ user, onBack }: { user: User; onBack: () => void }) {
-  const { tg, haptic, hapticNotify } = useTelegram();
-  const toast = useToast();
-  const [plans, setPlans] = useState<import("./api").Plan[]>([]);
-  const [reviews, setReviews] = useState<import("./api").Review[]>([]);
-  const [view, setView] = useState<"plans" | "card">("plans");
-  const [card, setCard] = useState<import("./api").CardInfo | null>(null);
-  const [cardPlan, setCardPlan] = useState<import("./api").Plan | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api.getPlans().then(setPlans).catch(() => {});
-    api.getReviews().then(setReviews).catch(() => {});
-  }, []);
-
-  const payStars = async (planId: number) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const { link } = await api.payStars(planId);
-      const wa = tg as any;
-      if (wa?.openInvoice) {
-        wa.openInvoice(link, (status: string) => {
-          if (status === "paid") { hapticNotify("success"); toast.success("Premium faollashtirildi!"); onBack(); }
-          else if (status === "failed") toast.error("To'lov amalga oshmadi");
-        });
-      } else if (tg?.openTelegramLink) {
-        tg.openTelegramLink(link);
-      }
-    } catch {
-      toast.error("To'lovni boshlab bo'lmadi");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openCard = async (plan: import("./api").Plan) => {
-    haptic("light");
-    try {
-      const info = await api.getCardInfo(plan.id);
-      setCard(info); setCardPlan(plan); setView("card");
-    } catch {
-      toast.error("Karta ma'lumotlari yo'q");
-    }
-  };
-
-  const sendScreenshot = async () => {
-    if (!cardPlan || busy) return;
-    setBusy(true);
-    try {
-      const { bot_deeplink } = await api.payCard(cardPlan.id);
-      if (tg?.openTelegramLink) tg.openTelegramLink(bot_deeplink);
-      else window.open(bot_deeplink, "_blank");
-    } catch {
-      toast.error("Xatolik");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (view === "card" && card) {
-    return (
-      <div className="flex flex-col h-full">
-        <SubHeader title="Premium" onBack={() => setView("plans")} />
-        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-          <h2 className="text-base font-bold text-foreground">Payment Details</h2>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Card Number</p>
-            <div className="bg-secondary rounded-2xl p-4 flex items-center justify-between">
-              <span className="text-lg font-mono text-foreground tracking-wide">{card.card_number}</span>
-              <button
-                onClick={() => { navigator.clipboard.writeText(card.card_number.replace(/\s/g, "")).catch(() => {}); toast.success("Nusxalandi"); }}
-                className="text-orange-400 text-sm font-semibold"
-              >Copy</button>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Card Holder</p>
-            <div className="bg-secondary rounded-2xl p-4"><span className="text-foreground">{card.card_holder}</span></div>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Amount</p>
-            <div className="bg-secondary rounded-2xl p-4"><span className="text-foreground font-bold">{card.amount_uzs.toLocaleString()} so'm</span></div>
-          </div>
-          <button
-            onClick={sendScreenshot}
-            disabled={busy}
-            className="w-full bg-orange-500 text-white font-semibold py-4 rounded-2xl disabled:opacity-60"
-          >📷 Send Screenshot to Admin</button>
-          <p className="text-xs text-muted-foreground text-center">
-            After payment, send the screenshot to the admin. You'll get access once it's confirmed.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      <SubHeader title="Premium" onBack={onBack} />
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {user.is_premium && (
-          <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-2xl p-4 flex items-center gap-3">
-            <Crown className="w-6 h-6 text-emerald-400" />
-            <p className="text-sm text-foreground">
-              Premium active{user.premium_until ? ` until ${new Date(user.premium_until).toLocaleDateString()}` : ""}
-            </p>
-          </div>
-        )}
-
-        {reviews.length > 0 && (
-          <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4">
-            {reviews.map((r) => (
-              <div key={r.id} className="bg-card border border-border rounded-2xl p-4 min-w-[220px] max-w-[240px]">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-semibold text-foreground truncate">{r.name}</span>
-                  <span className="text-xs text-muted-foreground">{timeAgo(r.created_at)}</span>
-                </div>
-                <div className="text-yellow-400 text-sm mb-2">{"★".repeat(Math.max(1, Math.min(5, r.rating)))}</div>
-                <p className="text-sm text-muted-foreground">{r.text}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {plans.map((p) => (
-          <div
-            key={p.id}
-            className={cn(
-              "bg-card rounded-3xl p-5 border",
-              p.is_popular ? "border-orange-500/50" : "border-border"
-            )}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xl font-bold text-foreground">{p.title}</h3>
-              {p.is_popular && (
-                <span className="text-xs font-semibold text-orange-400 bg-orange-500/15 rounded-full px-3 py-1">Most popular</span>
-              )}
-            </div>
-            <p className="text-2xl font-bold text-foreground">
-              {p.price_uzs.toLocaleString()} <span className="text-sm font-normal text-muted-foreground">UZS</span>
-            </p>
-            <p className="text-sm text-muted-foreground mb-4">or {p.price_stars} ⭐ Stars</p>
-            <button
-              onClick={() => payStars(p.id)}
-              disabled={busy}
-              className="w-full bg-[#6366f1] text-white font-semibold py-3.5 rounded-2xl mb-2 disabled:opacity-60"
-            >⭐ Pay with Stars</button>
-            <button
-              onClick={() => openCard(p)}
-              className="w-full bg-secondary border border-border text-foreground font-semibold py-3.5 rounded-2xl"
-            >💳 Pay by card transfer</button>
-            <p className="text-xs text-muted-foreground text-center mt-2">
-              Auto-renews every {p.duration_days} days. Cancel anytime in Telegram.
-            </p>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -1515,14 +1221,13 @@ export default function App() {
   const closeSub = () => { setSub(null); loadAll().catch(() => {}); };
 
   const renderMain = () => {
-    if (sub === "premium") return <PremiumScreen user={user} onBack={closeSub} />;
     if (sub === "progress") return <ProgressScreen onBack={closeSub} />;
     if (sub === "history") return <CallHistoryScreen history={history} onBack={closeSub} />;
     if (sub === "feedback") return <FeedbackScreen onBack={closeSub} />;
     if (sub === "questions") return <QuestionsBrowser onBack={() => setSub(null)} />;
     switch (activeNav) {
       case "speaking":
-        return <SpeakingScreen user={user} history={history} onChanged={() => { loadAll().catch(() => {}); }} onOpenQuestions={() => setSub("questions")} onFindPartner={() => { if (!findingRef.current) { findingRef.current = true; setFinding(true); } }} />;
+        return <SpeakingScreen user={user} history={history} onOpenQuestions={() => setSub("questions")} onFindPartner={() => { if (!findingRef.current) { findingRef.current = true; setFinding(true); } }} />;
       case "leaderboard":
         return <LeaderboardScreen />;
       case "invite":

@@ -269,11 +269,7 @@ export function useVoiceCall(): VoiceCall {
           setState("ended");
           break;
         case "error":
-          setError(
-            msg.detail === "no_minutes"
-              ? "Bugungi bepul daqiqalaringiz tugadi. Kanalga qo'shilib bonus oling yoki Premium oling."
-              : msg.detail || "Xatolik",
-          );
+          setError(msg.detail || "Xatolik");
           setState("error");
           break;
       }

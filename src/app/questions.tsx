@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   MessageCircle, RefreshCw, ChevronLeft, ChevronRight, Loader2, BookOpen,
+  Mic, ArrowRight,
 } from "lucide-react";
 import { api, type QuestionTopic, type SpeakingPart, type GroupDetail } from "./api";
 
@@ -34,12 +35,34 @@ function PartTabs({ part, onPick }: { part: number; onPick: (n: number) => void 
   );
 }
 
+// Big "Sayra-style" part tile — grey body with a mic + a colored number stripe.
+// Tapping it opens that part's questions without leaving the call.
+function PartTile({ p, onPick }: { p: typeof PARTS[number]; onPick: () => void }) {
+  return (
+    <button
+      onClick={onPick}
+      className="relative h-20 rounded-2xl overflow-hidden bg-secondary flex items-center active:scale-[0.98] transition-transform"
+    >
+      <div className="flex-1 flex flex-col items-center justify-center gap-0.5">
+        <Mic className={cx("w-6 h-6", p.text)} />
+        <span className="text-[11px] text-muted-foreground lowercase">{p.label}</span>
+      </div>
+      <div className={cx("w-11 self-stretch flex items-center justify-center", p.dot)}>
+        <span className="text-white text-2xl font-extrabold">{p.n}</span>
+      </div>
+    </button>
+  );
+}
+
 // ── In-call conversation topic ────────────────────────────────────────────────
 export function InCallTopic({ onHaptic }: { onHaptic?: () => void }) {
   const [part, setPart] = useState(1);
   const [qs, setQs] = useState<QuestionTopic[]>([]);
   const [idx, setIdx] = useState(0);
   const [loading, setLoading] = useState(true);
+  // When set, a full-screen question browser opens over the live call (the
+  // WebRTC connection keeps running underneath — this is pure UI).
+  const [browse, setBrowse] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -53,6 +76,15 @@ export function InCallTopic({ onHaptic }: { onHaptic?: () => void }) {
 
   const q = qs[idx];
   const next = () => { onHaptic?.(); if (qs.length) setIdx((i) => (i + 1) % qs.length); };
+  const open = (n: number) => { onHaptic?.(); setBrowse(n); };
+
+  if (browse !== null) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background">
+        <QuestionsBrowser initialPart={browse} onBack={() => setBrowse(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-sm space-y-3">
@@ -75,14 +107,27 @@ export function InCallTopic({ onHaptic }: { onHaptic?: () => void }) {
           </button>
         </div>
       </div>
+
+      {/* Part tabs switch the topic card; the big tiles open the full browser. */}
       <PartTabs part={part} onPick={(n) => { onHaptic?.(); setPart(n); }} />
+
+      <div className="grid grid-cols-2 gap-3">
+        {PARTS.map((p) => <PartTile key={p.n} p={p} onPick={() => open(p.n)} />)}
+        <button
+          onClick={() => open(1)}
+          className="relative h-20 rounded-2xl overflow-hidden bg-orange-500 flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] transition-transform"
+        >
+          <ArrowRight className="w-6 h-6 text-white" />
+          <span className="text-[11px] text-white/90 font-medium">Hammasi</span>
+        </button>
+      </div>
     </div>
   );
 }
 
 // ── Full questions browser (sub-page) ─────────────────────────────────────────
-export function QuestionsBrowser({ onBack }: { onBack: () => void }) {
-  const [part, setPart] = useState(1);
+export function QuestionsBrowser({ onBack, initialPart = 1 }: { onBack: () => void; initialPart?: number }) {
+  const [part, setPart] = useState(initialPart);
   const [parts, setParts] = useState<SpeakingPart[] | null>(null);
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const [loadingGroup, setLoadingGroup] = useState(false);
