@@ -403,6 +403,7 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
   const v = useVoiceCall();
   const started = useRef(false);
   const [rateBusy, setRateBusy] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   const ratePartner = async (n: number) => {
     if (rateBusy || !v.partner) { onClose(); return; }
@@ -429,6 +430,9 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
   }, [v.state, v.error, toast]);
 
   const close = () => { haptic("heavy"); v.hangup(); onClose(); };
+  // End an active call but STAY mounted so the ender lands on the rating screen
+  // too (both peers must rate each other). onClose runs after rate/skip.
+  const endCall = () => { haptic("heavy"); v.hangup(); };
 
   // Searching / connecting
   if (v.state === "searching" || v.state === "connecting") {
@@ -450,9 +454,31 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
             {v.state === "connecting" ? "Ovozli aloqa o'rnatilmoqda" : "Sizning darajangizdagi suhbatdosh qidirilmoqda"}
           </p>
         </div>
-        <button onClick={close} className="flex items-center gap-2 bg-secondary border border-border rounded-2xl px-6 py-3 text-sm font-semibold text-foreground">
+        <button onClick={() => { haptic("light"); setConfirmCancel(true); }} className="flex items-center gap-2 bg-secondary border border-border rounded-2xl px-6 py-3 text-sm font-semibold text-foreground">
           <X className="w-4 h-4" /> Bekor qilish
         </button>
+
+        {confirmCancel && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setConfirmCancel(false)}>
+            <div className="w-full max-w-sm bg-card border border-border rounded-3xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+              <div className="text-center space-y-1.5">
+                <h3 className="text-lg font-bold text-foreground">Qidiruvni bekor qilasizmi?</h3>
+                <p className="text-sm text-muted-foreground">Hamroh qidirish to'xtatiladi.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { haptic("light"); setConfirmCancel(false); }}
+                  className="flex-1 bg-secondary border border-border rounded-2xl py-3 text-sm font-semibold text-foreground">
+                  Yo'q
+                </button>
+                <button onClick={() => { setConfirmCancel(false); close(); }}
+                  className="flex-1 bg-red-500 rounded-2xl py-3 text-sm font-bold text-white">
+                  Ha, bekor qilish
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -534,7 +560,7 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
             v.muted ? "bg-foreground/10 border-foreground/20 text-foreground" : "bg-secondary border-border text-muted-foreground")}>
           {v.muted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
         </button>
-        <button onClick={close}
+        <button onClick={endCall}
           className="flex items-center gap-2 bg-red-500 rounded-full px-8 py-4 text-sm font-bold text-white"
           style={{ boxShadow: "0 8px 32px rgba(239,68,68,0.35)" }}>
           <PhoneOff className="w-5 h-5" /> Tugatish
