@@ -321,7 +321,7 @@ function SpeakingScreen({
             onClick={() => { haptic("light"); onOpenQuestions(); }}
             className="flex items-center gap-1.5 bg-secondary rounded-full px-3 py-1.5 text-xs font-semibold text-foreground"
           >
-            <BookOpen className="w-3.5 h-3.5 text-orange-400" /> Savollar
+            <BookOpen className="w-3.5 h-3.5 text-orange-400" /> Questions
           </button>
           <div className="bg-orange-500/15 border border-orange-500/30 rounded-full px-3 py-1">
             <span className="text-xs font-bold text-orange-400 tracking-wide">{levelLabel(user.level)}</span>
@@ -429,7 +429,7 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
     if (!stars || !v.partner) { onClose(); return; }
     setRateBusy(true);
     haptic("medium");
-    try { await api.ratePartner(v.partner.id, stars); toast.success("Rahmat!"); }
+    try { await api.ratePartner(v.partner.id, stars); toast.success("Thanks!"); }
     catch { /* non-blocking */ }
     onClose();
   };
@@ -441,12 +441,12 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (v.state === "in_call") {
       hapticNotify("success");
-      toast.success("Hamroh topildi — suhbat boshlandi");
+      toast.success("Partner found — conversation started");
     }
   }, [v.state, hapticNotify, toast]);
 
   useEffect(() => {
-    if (v.state === "error") toast.error(v.error || "Ovozli aloqa xatosi");
+    if (v.state === "error") toast.error(v.error || "Voice call error");
   }, [v.state, v.error, toast]);
 
   const close = () => { haptic("heavy"); v.hangup(); onClose(); };
@@ -468,14 +468,14 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
         </div>
         <div className="space-y-2">
           <h2 className="text-2xl font-bold text-foreground">
-            {v.state === "connecting" ? "Ulanmoqda…" : "Hamroh qidirilmoqda…"}
+            {v.state === "connecting" ? "Connecting…" : "Finding a partner…"}
           </h2>
           <p className="text-muted-foreground text-sm max-w-xs">
-            {v.state === "connecting" ? "Ovozli aloqa o'rnatilmoqda" : "Sizning darajangizdagi suhbatdosh qidirilmoqda"}
+            {v.state === "connecting" ? "Establishing voice call" : "Finding a partner at your level"}
           </p>
         </div>
         <button onClick={() => { haptic("light"); setConfirmCancel(true); }} className="flex items-center gap-2 bg-secondary border border-border rounded-2xl px-6 py-3 text-sm font-semibold text-foreground">
-          <X className="w-4 h-4" /> Bekor qilish
+          <X className="w-4 h-4" /> Cancel
         </button>
 
         {confirmCancel && (
@@ -483,17 +483,17 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
             onClick={() => setConfirmCancel(false)}>
             <div className="w-full max-w-sm bg-card border border-border rounded-3xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
               <div className="text-center space-y-1.5">
-                <h3 className="text-lg font-bold text-foreground">Qidiruvni bekor qilasizmi?</h3>
-                <p className="text-sm text-muted-foreground">Hamroh qidirish to'xtatiladi.</p>
+                <h3 className="text-lg font-bold text-foreground">Cancel search?</h3>
+                <p className="text-sm text-muted-foreground">Partner search will stop.</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={() => { haptic("light"); setConfirmCancel(false); }}
                   className="flex-1 bg-secondary border border-border rounded-2xl py-3 text-sm font-semibold text-foreground">
-                  Yo'q
+                  No
                 </button>
                 <button onClick={() => { setConfirmCancel(false); close(); }}
                   className="flex-1 bg-red-500 rounded-2xl py-3 text-sm font-bold text-white">
-                  Ha, bekor qilish
+                  Yes, cancel
                 </button>
               </div>
             </div>
@@ -509,8 +509,8 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
         <div className="w-14 h-14 rounded-2xl bg-red-500/15 flex items-center justify-center">
           <AlertTriangle className="w-7 h-7 text-red-400" />
         </div>
-        <p className="text-sm text-muted-foreground max-w-xs">{v.error || "Xatolik yuz berdi"}</p>
-        <button onClick={onClose} className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl">Yopish</button>
+        <p className="text-sm text-muted-foreground max-w-xs">{v.error || "Something went wrong"}</p>
+        <button onClick={onClose} className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl">Close</button>
       </div>
     );
   }
@@ -519,11 +519,11 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
     return (
       <div className="flex flex-col items-center justify-center h-full px-8 text-center gap-6">
         <CheckCircle className="w-12 h-12 text-emerald-400" />
-        <h2 className="text-xl font-bold text-foreground">Suhbat tugadi</h2>
+        <h2 className="text-xl font-bold text-foreground">Conversation ended</h2>
         {v.partner ? (
           <>
             <p className="text-sm text-muted-foreground">
-              {v.partner.name} bilan suhbatni baholang
+              Rate your conversation with {v.partner.name}
             </p>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((n) => (
@@ -540,14 +540,14 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
               disabled={rateBusy || stars === 0}
               className="bg-orange-500 text-white text-sm font-bold px-8 py-3 rounded-2xl disabled:opacity-40 transition-opacity"
             >
-              {rateBusy ? "Yuborilmoqda…" : "Baholash"}
+              {rateBusy ? "Submitting…" : "Rate"}
             </button>
             <button onClick={onClose} disabled={rateBusy} className="text-sm text-muted-foreground underline disabled:opacity-40">
-              O'tkazib yuborish
+              Skip
             </button>
           </>
         ) : (
-          <button onClick={onClose} className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl">Yopish</button>
+          <button onClick={onClose} className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl">Close</button>
         )}
       </div>
     );
@@ -563,7 +563,7 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
           v.quality === "bad" ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"
         )}>
           <AlertTriangle className="w-3.5 h-3.5" />
-          {v.quality === "bad" ? "Internet juda sekin — ovoz kechikishi mumkin" : "Internet sekin"}
+          {v.quality === "bad" ? "Internet very slow — audio may lag" : "Slow internet"}
         </div>
       )}
       <div className="flex flex-col items-center gap-3">
@@ -572,14 +572,14 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
           <span className="absolute inset-0 rounded-full border-2 border-orange-500/40 animate-ping" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-foreground">{v.partner?.name ?? "Hamroh"}</h2>
-          <p className="text-sm text-muted-foreground mt-1">Jonli ovozli suhbat</p>
+          <h2 className="text-2xl font-bold text-foreground">{v.partner?.name ?? "Partner"}</h2>
+          <p className="text-sm text-muted-foreground mt-1">Live voice conversation</p>
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-1">
         <span className="text-4xl font-bold text-foreground tabular-nums">{fmtClock(v.elapsed)}</span>
-        <span className="text-xs text-muted-foreground">Suhbat vaqti</span>
+        <span className="text-xs text-muted-foreground">Call time</span>
       </div>
 
       <InCallTopic onHaptic={() => haptic("light")} />
@@ -595,7 +595,7 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
         >
           {v.uploadingImage
             ? <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
-            : <><ImagePlus className="w-5 h-5" /><span className="text-[9px]">Rasm</span></>}
+            : <><ImagePlus className="w-5 h-5" /><span className="text-[9px]">Photo</span></>}
         </button>
         {v.images.map((img) => (
           <button
@@ -629,7 +629,7 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
         <button onClick={endCall}
           className="flex items-center gap-2 bg-red-500 rounded-full px-8 py-4 text-sm font-bold text-white"
           style={{ boxShadow: "0 8px 32px rgba(239,68,68,0.35)" }}>
-          <PhoneOff className="w-5 h-5" /> Tugatish
+          <PhoneOff className="w-5 h-5" /> End
         </button>
       </div>
     </div>
@@ -769,7 +769,7 @@ function LeaderboardScreen() {
               </span>
               <Avatar name={r.name} size="sm" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{r.is_me ? "Siz" : r.name}</p>
+                <p className="text-sm font-semibold text-foreground truncate">{r.is_me ? "You" : r.name}</p>
               </div>
               <span className="text-sm font-bold text-orange-400 flex-shrink-0">{valueOf(r)}</span>
             </div>
@@ -1106,10 +1106,10 @@ function FeedbackScreen({ onBack }: { onBack: () => void }) {
     try {
       await api.postFeedback(rating, text.trim());
       hapticNotify("success");
-      toast.success("Rahmat! Fikringiz yuborildi.");
+      toast.success("Thanks! Your feedback was sent.");
       onBack();
     } catch {
-      toast.error("Yuborib bo'lmadi");
+      toast.error("Could not send");
     } finally {
       setBusy(false);
     }

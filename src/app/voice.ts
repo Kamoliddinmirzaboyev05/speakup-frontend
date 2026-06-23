@@ -38,7 +38,7 @@ async function acquireMic(): Promise<MediaStream> {
     return sharedMic;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error("Bu qurilmada mikrofon ishlamaydi (Telegram'ni yangilang)");
+    throw new Error("Microphone not available on this device (update Telegram)");
   }
   sharedMic = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   return sharedMic;
@@ -262,8 +262,8 @@ export function useVoiceCall(): VoiceCall {
             for (const m of queued) await applySignal(m);
           } catch (err: any) {
             const nm = err?.name === "NotAllowedError"
-              ? "Mikrofonga ruxsat berilmadi"
-              : (err?.message || "Ulanib bo'lmadi");
+              ? "Microphone access denied"
+              : (err?.message || "Could not connect");
             setError(nm); setState("error");
           }
           break;
@@ -282,12 +282,12 @@ export function useVoiceCall(): VoiceCall {
           setState("ended");
           break;
         case "error":
-          setError(msg.detail || "Xatolik");
+          setError(msg.detail || "Error");
           setState("error");
           break;
       }
     };
-    socket.onerror = () => { setError("Ulanish xatosi"); setState("error"); };
+    socket.onerror = () => { setError("Connection error"); setState("error"); };
     socket.onclose = () => { stopTimer(); stopHeartbeat(); };
   }, [setupPeer, applySignal, teardownPeer]);
 

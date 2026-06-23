@@ -95,11 +95,11 @@ export function InCallTopic({ onHaptic }: { onHaptic?: () => void }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] tracking-widest text-muted-foreground font-semibold">SUHBAT MAVZUSI</p>
+              <p className="text-[10px] tracking-widest text-muted-foreground font-semibold">CONVERSATION TOPIC</p>
               {qs.length > 0 && <span className="text-[10px] text-muted-foreground">{idx + 1}/{qs.length}</span>}
             </div>
             <p className="text-sm text-foreground leading-snug min-h-[2.5rem]">
-              {loading ? "Yuklanmoqda…" : (q?.text ?? "Bu part uchun savol yo'q")}
+              {loading ? "Loading…" : (q?.text ?? "No questions for this part")}
             </p>
           </div>
           <button onClick={next} disabled={!qs.length} className="text-muted-foreground hover:text-foreground disabled:opacity-30 shrink-0">
@@ -118,7 +118,7 @@ export function InCallTopic({ onHaptic }: { onHaptic?: () => void }) {
           className="relative h-20 rounded-2xl overflow-hidden bg-orange-500 flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] transition-transform"
         >
           <ArrowRight className="w-6 h-6 text-white" />
-          <span className="text-[11px] text-white/90 font-medium">Hammasi</span>
+          <span className="text-[11px] text-white/90 font-medium">All</span>
         </button>
       </div>
     </div>
@@ -152,7 +152,7 @@ export function QuestionsBrowser({ onBack, initialPart = 1 }: { onBack: () => vo
           <button onClick={() => setGroup(null)} className="text-orange-400"><ChevronLeft className="w-6 h-6" /></button>
           <div className="min-w-0">
             <h1 className="text-base font-bold text-foreground truncate">{group.title}</h1>
-            <p className="text-xs text-muted-foreground">{group.questions.length} ta savol</p>
+            <p className="text-xs text-muted-foreground">{group.questions.length} questions</p>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -162,7 +162,7 @@ export function QuestionsBrowser({ onBack, initialPart = 1 }: { onBack: () => vo
               <p className="text-sm text-foreground leading-snug">{q.text}</p>
             </div>
           ))}
-          {group.questions.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Savol yo'q</p>}
+          {group.questions.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No questions</p>}
         </div>
       </div>
     );
@@ -174,7 +174,7 @@ export function QuestionsBrowser({ onBack, initialPart = 1 }: { onBack: () => vo
       <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b border-border">
         <button onClick={onBack} className="text-orange-400"><ChevronLeft className="w-6 h-6" /></button>
         <h1 className="text-lg font-bold text-foreground flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-orange-400" /> IELTS savollari
+          <BookOpen className="w-5 h-5 text-orange-400" /> IELTS questions
         </h1>
       </div>
       <div className="px-4 pt-3">
@@ -188,13 +188,13 @@ export function QuestionsBrowser({ onBack, initialPart = 1 }: { onBack: () => vo
             <span className={cx("w-8 h-8 rounded-full text-white text-sm font-bold flex items-center justify-center shrink-0", pc.dot)}>{i + 1}</span>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground">{g.title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{g.question_count} ta savol</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{g.question_count} questions</p>
             </div>
             {g.tag && <span className={cx("text-[10px] px-2 py-1 rounded-lg bg-secondary font-medium shrink-0", pc.text)}>{g.tag}</span>}
             <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
           </button>
         ))}
-        {parts && groups.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Bu part uchun mavzu yo'q</p>}
+        {parts && groups.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No topics for this part</p>}
       </div>
     </div>
   );
