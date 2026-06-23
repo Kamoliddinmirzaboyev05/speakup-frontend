@@ -6,7 +6,9 @@
 // origin (dev uses the Vite proxy in vite.config.ts -> http://localhost:8000).
 // ---------------------------------------------------------------------------
 
-const BASE: string = (import.meta as any).env?.VITE_API_URL ?? "";
+// Strip any trailing slash(es) so `${BASE}${path}` never yields `//api/...`
+// (a trailing slash in VITE_API_URL would otherwise 404 on the backend).
+const BASE: string = ((import.meta as any).env?.VITE_API_URL ?? "").replace(/\/+$/, "");
 
 export const BOT_USERNAME: string =
   (import.meta as any).env?.VITE_BOT_USERNAME ?? "yourbot";
