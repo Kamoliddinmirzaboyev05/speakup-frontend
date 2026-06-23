@@ -30,6 +30,7 @@ import {
   ChevronRight,
   BookOpen,
   ImagePlus,
+  Pencil,
 } from "lucide-react";
 
 import {
@@ -103,7 +104,7 @@ function useTelegram() {
 // Types & utilities
 // ---------------------------------------------------------------------------
 type NavTab = "speaking" | "leaderboard" | "invite" | "profile";
-type SubPage = "progress" | "history" | "feedback" | "questions";
+type SubPage = "progress" | "history" | "feedback" | "questions" | "edit";
 type LeaderTab = "speakers" | "rated" | "streak";
 
 function cn(...classes: (string | false | undefined | null)[]) {
@@ -902,6 +903,13 @@ function ProfileScreen({ user, onOpen }: { user: User; onOpen: (page: SubPage) =
   const displayName = user.first_name ?? user.username ?? "You";
   const username = user.username ? `@${user.username}` : `id ${user.telegram_id}`;
 
+  const [ratings, setRatings] = useState<import("./api").MyRatings | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.myRatings().then((d) => alive && setRatings(d)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const menu: { icon: ReactNode; label: string; page: SubPage }[] = [
     { icon: <Star className="w-4 h-4" />, label: "My Progress", page: "progress" },
     { icon: <Clock className="w-4 h-4" />, label: "Call History", page: "history" },
@@ -924,7 +932,14 @@ function ProfileScreen({ user, onOpen }: { user: User; onOpen: (page: SubPage) =
 
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-gradient-to-b from-orange-500/10 to-transparent px-4 pt-6 pb-4 flex flex-col items-center gap-3">
+      <div className="relative bg-gradient-to-b from-orange-500/10 to-transparent px-4 pt-6 pb-4 flex flex-col items-center gap-3">
+        <button
+          onClick={() => { haptic("light"); onOpen("edit"); }}
+          className="absolute top-4 right-4 w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center text-orange-400 active:scale-95 transition-transform"
+          aria-label="Tahrirlash"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
         <div
           className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold text-white"
           style={{ background: "linear-gradient(135deg, #f97316, #ea580c)" }}
@@ -935,8 +950,16 @@ function ProfileScreen({ user, onOpen }: { user: User; onOpen: (page: SubPage) =
           <h2 className="text-lg font-bold text-foreground">{displayName}</h2>
           <p className="text-sm text-muted-foreground">{username}</p>
         </div>
-        <div className="bg-orange-500/15 border border-orange-500/30 rounded-full px-4 py-1.5">
-          <span className="text-xs font-bold text-orange-400">{levelLabel(user.level)}</span>
+        <div className="flex items-center gap-2">
+          <div className="bg-orange-500/15 border border-orange-500/30 rounded-full px-4 py-1.5">
+            <span className="text-xs font-bold text-orange-400">{levelLabel(user.level)}</span>
+          </div>
+          {ratings && ratings.count > 0 && (
+            <div className="bg-yellow-400/15 border border-yellow-400/30 rounded-full px-3 py-1.5 flex items-center gap-1">
+              <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
+              <span className="text-xs font-bold text-yellow-500">{ratings.avg.toFixed(1)}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -953,6 +976,31 @@ function ProfileScreen({ user, onOpen }: { user: User; onOpen: (page: SubPage) =
       </div>
 
       <div className="px-4 space-y-2 flex-1 overflow-y-auto pb-4">
+        {ratings && ratings.count > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between px-1 mb-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Baholar</p>
+              <span className="text-xs text-muted-foreground">{ratings.count} ta</span>
+            </div>
+            <div className="space-y-2">
+              {ratings.items.map((r) => (
+                <div key={r.id} className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
+                  <Avatar name={r.name} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground truncate">{r.name}</p>
+                    <p className="text-xs text-muted-foreground">{timeAgo(r.created_at)}</p>
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Star key={n} className={cn("w-3.5 h-3.5", n <= r.rating ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground/30")} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2 mb-3">
           {menu.map((item) => (
             <button
@@ -984,6 +1032,146 @@ function ProfileScreen({ user, onOpen }: { user: User; onOpen: (page: SubPage) =
 
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-3 pt-3">Appearance</p>
         <ThemeControl />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SCREEN: Edit profile
+// ---------------------------------------------------------------------------
+function Segmented<T extends string>({
+  value, options, onChange,
+}: { value: T | null; options: { v: T; label: string }[]; onChange: (v: T) => void }) {
+  const { haptic } = useTelegram();
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => (
+        <button
+          key={o.v}
+          onClick={() => { haptic("light"); onChange(o.v); }}
+          className={cn(
+            "px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors active:scale-95",
+            value === o.v ? "bg-orange-500 text-white border-orange-500" : "bg-card text-muted-foreground border-border"
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function EditProfileScreen({ user, onBack, onSaved }: { user: User; onBack: () => void; onSaved: (u: User) => void }) {
+  const { haptic } = useTelegram();
+  const toast = useToast();
+  const [level, setLevel] = useState<import("./api").Level | null>(user.level);
+  const [gender, setGender] = useState<import("./api").Gender | null>(user.gender);
+  const [challenge, setChallenge] = useState<import("./api").Challenge | null>(user.challenge);
+  const [location, setLocation] = useState(user.location ?? "");
+  const [goal, setGoal] = useState(user.goal ?? "");
+  const [frequency, setFrequency] = useState(user.frequency ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const inputCls = "w-full bg-card border border-border rounded-2xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-orange-500/50";
+
+  const save = async () => {
+    setSaving(true);
+    haptic("light");
+    try {
+      const updated = await api.updateProfile({
+        level,
+        gender,
+        challenge,
+        location: location.trim() || null,
+        goal: goal.trim() || null,
+        frequency: frequency.trim() || null,
+      });
+      onSaved(updated);
+      toast.success("Saqlandi");
+      onBack();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Saqlanmadi");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <SubHeader title="Profilni tahrirlash" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+        <Field label="Daraja">
+          <Segmented
+            value={level}
+            onChange={setLevel}
+            options={[
+              { v: "beginner", label: "Boshlang'ich" },
+              { v: "intermediate", label: "O'rta" },
+              { v: "advanced", label: "Yuqori" },
+            ]}
+          />
+        </Field>
+
+        <Field label="Jins">
+          <Segmented
+            value={gender}
+            onChange={setGender}
+            options={[
+              { v: "male", label: "Erkak" },
+              { v: "female", label: "Ayol" },
+              { v: "other", label: "Boshqa" },
+            ]}
+          />
+        </Field>
+
+        <Field label="Asosiy qiyinchilik">
+          <Segmented
+            value={challenge}
+            onChange={setChallenge}
+            options={[
+              { v: "grammar", label: "Grammatika" },
+              { v: "fluency", label: "Ravonlik" },
+              { v: "vocabulary", label: "So'z boyligi" },
+              { v: "pronunciation", label: "Talaffuz" },
+            ]}
+          />
+        </Field>
+
+        <Field label="Joylashuv">
+          <input className={inputCls} value={location} maxLength={64}
+            onChange={(e) => setLocation(e.target.value)} placeholder="Masalan: Toshkent" />
+        </Field>
+
+        <Field label="Maqsad">
+          <input className={inputCls} value={goal} maxLength={128}
+            onChange={(e) => setGoal(e.target.value)} placeholder="Masalan: IELTS 7.0" />
+        </Field>
+
+        <Field label="Mashq chastotasi">
+          <input className={inputCls} value={frequency} maxLength={64}
+            onChange={(e) => setFrequency(e.target.value)} placeholder="Masalan: Har kuni" />
+        </Field>
+      </div>
+
+      <div className="px-4 py-3 border-t border-border">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="w-full bg-orange-500 text-white text-sm font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.99] transition-transform"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+          Saqlash
+        </button>
       </div>
     </div>
   );
@@ -1319,6 +1507,7 @@ export default function App() {
     if (sub === "history") return <CallHistoryScreen history={history} onBack={closeSub} />;
     if (sub === "feedback") return <FeedbackScreen onBack={closeSub} />;
     if (sub === "questions") return <QuestionsBrowser onBack={() => setSub(null)} />;
+    if (sub === "edit") return <EditProfileScreen user={user} onBack={() => setSub(null)} onSaved={setUser} />;
     switch (activeNav) {
       case "speaking":
         return <SpeakingScreen user={user} history={history} onOpenQuestions={() => setSub("questions")} onFindPartner={() => { if (!findingRef.current) { findingRef.current = true; setFinding(true); } }} />;

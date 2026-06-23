@@ -1,5 +1,5 @@
 // IELTS speaking questions UI: in-call topic card + full browser.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ButtonHTMLAttributes } from "react";
 import {
   MessageCircle, RefreshCw, ChevronLeft, ChevronRight, Loader2, BookOpen,
   Mic, ArrowRight,
@@ -7,6 +7,44 @@ import {
 import { api, type QuestionTopic, type SpeakingPart, type GroupDetail } from "./api";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
+
+// ── Material-style tap ripple ─────────────────────────────────────────────────
+// A wave expands from the tap point so taps feel responsive on the questions
+// screens. The host <button> is clipped (relative + overflow-hidden) and each
+// ripple span scales up while fading via the `su-ripple` keyframes (index.css).
+function useRipple() {
+  const [ripples, setRipples] = useState<{ id: number; x: number; y: number; size: number }[]>([]);
+  const seq = useRef(0);
+  const spawn = (e: PointerEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const id = seq.current++;
+    const x = e.clientX - rect.left - size / 2;
+    const y = e.clientY - rect.top - size / 2;
+    setRipples((rs) => [...rs, { id, x, y, size }]);
+    window.setTimeout(() => setRipples((rs) => rs.filter((r) => r.id !== id)), 600);
+  };
+  const layer = (
+    <span className="pointer-events-none absolute inset-0 overflow-hidden">
+      {ripples.map((r) => (
+        <span key={r.id} className="su-ripple" style={{ left: r.x, top: r.y, width: r.size, height: r.size }} />
+      ))}
+    </span>
+  );
+  return { spawn, layer };
+}
+
+// A <button> with a built-in tap ripple. Drop-in replacement for tappable
+// elements on the questions screens.
+function RippleButton({ className, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  const { spawn, layer } = useRipple();
+  return (
+    <button {...rest} onPointerDown={spawn} className={cx("relative overflow-hidden", className)}>
+      {children}
+      {layer}
+    </button>
+  );
+}
 
 const PARTS = [
   { n: 1, label: "Part 1", dot: "bg-emerald-500", text: "text-emerald-400", ring: "ring-emerald-500/40" },
@@ -19,7 +57,7 @@ function PartTabs({ part, onPick }: { part: number; onPick: (n: number) => void 
   return (
     <div className="bg-secondary rounded-2xl p-1 flex">
       {PARTS.map((p) => (
-        <button
+        <RippleButton
           key={p.n}
           onClick={() => onPick(p.n)}
           className={cx(
@@ -29,7 +67,7 @@ function PartTabs({ part, onPick }: { part: number; onPick: (n: number) => void 
         >
           <span className={cx("w-2 h-2 rounded-full", p.dot)} />
           {p.label}
-        </button>
+        </RippleButton>
       ))}
     </div>
   );
@@ -39,9 +77,9 @@ function PartTabs({ part, onPick }: { part: number; onPick: (n: number) => void 
 // Tapping it opens that part's questions without leaving the call.
 function PartTile({ p, onPick }: { p: typeof PARTS[number]; onPick: () => void }) {
   return (
-    <button
+    <RippleButton
       onClick={onPick}
-      className="relative h-20 rounded-2xl overflow-hidden bg-secondary flex items-center active:scale-[0.98] transition-transform"
+      className="h-20 rounded-2xl bg-secondary flex items-center active:scale-[0.98] transition-transform"
     >
       <div className="flex-1 flex flex-col items-center justify-center gap-0.5">
         <Mic className={cx("w-6 h-6", p.text)} />
@@ -50,7 +88,7 @@ function PartTile({ p, onPick }: { p: typeof PARTS[number]; onPick: () => void }
       <div className={cx("w-11 self-stretch flex items-center justify-center", p.dot)}>
         <span className="text-white text-2xl font-extrabold">{p.n}</span>
       </div>
-    </button>
+    </RippleButton>
   );
 }
 
@@ -113,13 +151,13 @@ export function InCallTopic({ onHaptic }: { onHaptic?: () => void }) {
 
       <div className="grid grid-cols-2 gap-3">
         {PARTS.map((p) => <PartTile key={p.n} p={p} onPick={() => open(p.n)} />)}
-        <button
+        <RippleButton
           onClick={() => open(1)}
-          className="relative h-20 rounded-2xl overflow-hidden bg-orange-500 flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] transition-transform"
+          className="h-20 rounded-2xl bg-orange-500 flex flex-col items-center justify-center gap-0.5 active:scale-[0.98] transition-transform"
         >
           <ArrowRight className="w-6 h-6 text-white" />
           <span className="text-[11px] text-white/90 font-medium">All</span>
-        </button>
+        </RippleButton>
       </div>
     </div>
   );
@@ -183,7 +221,7 @@ export function QuestionsBrowser({ onBack, initialPart = 1 }: { onBack: () => vo
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {!parts && <div className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin text-orange-400 inline" /></div>}
         {parts && groups.map((g, i) => (
-          <button key={g.id} onClick={() => openGroup(g.id)} disabled={loadingGroup}
+          <RippleButton key={g.id} onClick={() => openGroup(g.id)} disabled={loadingGroup}
             className="w-full bg-card border border-border rounded-2xl p-4 flex items-center gap-3 text-left hover:border-orange-500/30 transition-colors">
             <span className={cx("w-8 h-8 rounded-full text-white text-sm font-bold flex items-center justify-center shrink-0", pc.dot)}>{i + 1}</span>
             <div className="flex-1 min-w-0">
@@ -192,7 +230,7 @@ export function QuestionsBrowser({ onBack, initialPart = 1 }: { onBack: () => vo
             </div>
             {g.tag && <span className={cx("text-[10px] px-2 py-1 rounded-lg bg-secondary font-medium shrink-0", pc.text)}>{g.tag}</span>}
             <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-          </button>
+          </RippleButton>
         ))}
         {parts && groups.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No topics for this part</p>}
       </div>

@@ -152,6 +152,20 @@ export interface Review {
   created_at: string;
 }
 
+// A rating this user received from a partner (stars only — no comment text).
+export interface ReceivedRating {
+  id: number;
+  name: string;
+  rating: number;
+  created_at: string;
+}
+
+export interface MyRatings {
+  avg: number;
+  count: number;
+  items: ReceivedRating[];
+}
+
 // ---- Endpoints ------------------------------------------------------------
 
 export const api = {
@@ -181,6 +195,8 @@ export const api = {
   speakingParts: () => req<SpeakingPart[]>("/api/speaking/parts"),
   speakingQuestions: (part: number) => req<QuestionTopic[]>(`/api/speaking/questions?part=${part}`),
   speakingGroup: (id: number) => req<GroupDetail>(`/api/speaking/groups/${id}`),
+
+  myRatings: () => req<MyRatings>("/api/ratings/received"),
 
   ratePartner: (partner_id: number, rating: number) =>
     req<{ ok: boolean; avg: number; count: number }>("/api/ratings", {

@@ -230,3 +230,22 @@
 .su-toast-in {
   animation: su-toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Material-style tap ripple — one span per tap, scales up while fading.
+   Tinted with the host's text color so it reads on both light/colored buttons. */
+@keyframes su-ripple {
+  to {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.su-ripple {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.22;
+  transform: scale(0);
+  animation: su-ripple 0.6s ease-out forwards;
+  pointer-events: none;
+}
