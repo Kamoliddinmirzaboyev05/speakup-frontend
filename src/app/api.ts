@@ -58,6 +58,7 @@ export interface User {
   telegram_id: number;
   username: string | null;
   first_name: string | null;
+  phone: string | null;
   level: Level | null;
   goal: string | null;
   challenge: Challenge | null;
@@ -68,6 +69,10 @@ export interface User {
   total_minutes: number;
   streak: number;
   total_sessions: number;
+  is_premium: boolean;
+  premium_until: string | null;
+  remaining_today: number | null; // null = unlimited (premium)
+  free_daily_minutes: number;
 }
 
 export interface Partner {
@@ -109,12 +114,77 @@ export interface LeaderboardRow {
   name: string;
   username: string | null;
   streak: number;
+  rating: number;
+  rating_count: number;
   is_me: boolean;
 }
 
 export interface Leaderboard {
   week: LeaderboardRow[];
   me: { rank: number; minutes: number } | null;
+}
+
+// ---- IELTS speaking content ----
+export interface TopicGroupLite {
+  id: number;
+  part: number;
+  title: string;
+  tag: string | null;
+  question_count: number;
+}
+export interface SpeakingPart {
+  part: number;
+  groups: TopicGroupLite[];
+}
+export interface QuestionTopic {
+  id: number;
+  text: string;
+  part: number;
+  group_title: string;
+}
+export interface GroupDetail extends TopicGroupLite {
+  questions: { id: number; text: string }[];
+}
+
+export interface BonusStatus {
+  channel_username: string;
+  amount: number;
+  is_member: boolean;
+  claimed_today: boolean;
+}
+
+export interface ReferralTier {
+  friends: number;
+  days: number;
+}
+export interface ReferralInfo {
+  link: string;
+  joined: number;
+  days_earned: number;
+  tiers: ReferralTier[];
+  next_tier: ReferralTier | null;
+}
+
+export interface Plan {
+  id: number;
+  key: string;
+  title: string;
+  price_uzs: number;
+  price_stars: number;
+  duration_days: number;
+  is_popular: boolean;
+}
+export interface CardInfo {
+  card_number: string;
+  card_holder: string;
+  amount_uzs: number;
+}
+export interface Review {
+  id: number;
+  name: string;
+  rating: number;
+  text: string;
+  created_at: string;
 }
 
 // ---- Endpoints ------------------------------------------------------------
@@ -140,4 +210,56 @@ export const api = {
   history: () => req<SessionHistoryItem[]>("/api/sessions/history"),
 
   leaderboard: () => req<Leaderboard>("/api/leaderboard"),
+
+  ice: () => req<{ iceServers: RTCIceServer[] }>("/api/rtc/ice"),
+
+  speakingParts: () => req<SpeakingPart[]>("/api/speaking/parts"),
+  speakingQuestions: (part: number) => req<QuestionTopic[]>(`/api/speaking/questions?part=${part}`),
+  speakingGroup: (id: number) => req<GroupDetail>(`/api/speaking/groups/${id}`),
+
+  getBonus: () => req<BonusStatus>("/api/bonus"),
+  claimBonus: () => req<{ ok: boolean; amount: number }>("/api/bonus/claim", { method: "POST" }),
+
+  getReferral: () => req<ReferralInfo>("/api/referral"),
+
+  ratePartner: (partner_id: number, rating: number) =>
+    req<{ ok: boolean; avg: number; count: number }>("/api/ratings", {
+      method: "POST",
+      body: JSON.stringify({ partner_id, rating }),
+    }),
+
+  getPlans: () => req<Plan[]>("/api/payments/plans"),
+  payStars: (plan_id: number) =>
+    req<{ link: string; payment_id: number }>("/api/payments/stars", {
+      method: "POST",
+      body: JSON.stringify({ plan_id }),
+    }),
+  getCardInfo: (plan_id: number) => req<CardInfo>(`/api/payments/card?plan_id=${plan_id}`),
+  payCard: (plan_id: number) =>
+    req<{ payment_id: number; bot_deeplink: string }>("/api/payments/card", {
+      method: "POST",
+      body: JSON.stringify({ plan_id }),
+    }),
+
+  getProgress: () => req<Progress>("/api/users/progress"),
+  postFeedback: (rating: number, text: string) =>
+    req<{ ok: boolean }>("/api/feedback", { method: "POST", body: JSON.stringify({ rating, text }) }),
+  getReviews: () => req<Review[]>("/api/feedback/reviews"),
 };
+
+export interface Progress {
+  by_day: { date: string; minutes: number }[];
+  total_minutes: number;
+  total_sessions: number;
+  streak: number;
+  best_day: number;
+}
+
+// WebSocket URL for real-time voice signaling (carries initData as a query
+// param — WS can't send custom headers).
+export function rtcSocketUrl(): string {
+  const wsBase = BASE
+    ? BASE.replace(/^http/, "ws")
+    : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
+  return `${wsBase}/api/rtc/ws?init_data=${encodeURIComponent(initData())}`;
+}

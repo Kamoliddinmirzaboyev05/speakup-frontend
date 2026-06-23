@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import {
   Mic,
+  MicOff,
   Trophy,
   UserPlus,
   User as UserIcon,
   Flame,
-  SlidersHorizontal,
   Search,
   X,
-  ChevronRight,
   Medal,
   Star,
   Clock,
@@ -23,6 +22,13 @@ import {
   CheckCircle,
   AlertTriangle,
   Loader2,
+  Sun,
+  Moon,
+  Smartphone,
+  Gift,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
 } from "lucide-react";
 
 import {
@@ -30,10 +36,13 @@ import {
   ApiError,
   BOT_USERNAME,
   type User,
-  type Partner,
   type SessionHistoryItem,
   type Leaderboard,
 } from "./api";
+import { useVoiceCall } from "./voice";
+import { InCallTopic, QuestionsBrowser } from "./questions";
+import { useTheme, type ThemeMode } from "./theme";
+import { useToast } from "./toast";
 
 // ---------------------------------------------------------------------------
 // Telegram WebApp shim
@@ -43,10 +52,15 @@ declare global {
     Telegram?: {
       WebApp: {
         initData: string;
+        colorScheme?: "light" | "dark";
         ready: () => void;
         expand: () => void;
         close: () => void;
         openTelegramLink?: (url: string) => void;
+        onEvent?: (event: string, cb: () => void) => void;
+        offEvent?: (event: string, cb: () => void) => void;
+        setBackgroundColor?: (color: string) => void;
+        setHeaderColor?: (color: string) => void;
         BackButton: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };
         HapticFeedback: {
           impactOccurred: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
@@ -87,7 +101,8 @@ function useTelegram() {
 // Types & utilities
 // ---------------------------------------------------------------------------
 type NavTab = "speaking" | "leaderboard" | "invite" | "profile";
-type LeaderTab = "speakers" | "streak";
+type SubPage = "premium" | "progress" | "history" | "feedback" | "questions";
+type LeaderTab = "speakers" | "rated" | "streak";
 
 function cn(...classes: (string | false | undefined | null)[]) {
   return classes.filter(Boolean).join(" ");
@@ -143,6 +158,10 @@ function levelLabel(level: string | null): string {
 // ---------------------------------------------------------------------------
 // Shared components
 // ---------------------------------------------------------------------------
+function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("su-skeleton", className)} />;
+}
+
 function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
   const sizes = { sm: "w-8 h-8 text-xs", md: "w-10 h-10 text-sm", lg: "w-14 h-14 text-base" };
   return (
@@ -167,8 +186,161 @@ function PulseRing({ active }: { active: boolean }) {
 
 function Centered({ children }: { children: ReactNode }) {
   return (
-    <div className="dark fixed inset-0 bg-background flex flex-col items-center justify-center px-8 text-center gap-4" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="fixed inset-0 bg-background flex flex-col items-center justify-center px-8 text-center gap-4">
       {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Skeletons (content-shaped loading placeholders)
+// ---------------------------------------------------------------------------
+function AppSkeleton() {
+  return (
+    <div className="fixed inset-0 bg-background flex flex-col">
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {/* top bar */}
+        <div className="flex items-center justify-between px-4 pt-3 pb-3">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-7 w-20 rounded-full" />
+            <Skeleton className="h-7 w-12 rounded-full" />
+          </div>
+          <Skeleton className="h-6 w-16 rounded-full" />
+        </div>
+        {/* center mic */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-8">
+          <Skeleton className="w-36 h-36 rounded-full" />
+          <div className="flex flex-col items-center gap-2">
+            <Skeleton className="h-4 w-44" />
+            <Skeleton className="h-3 w-56" />
+          </div>
+        </div>
+        {/* recent */}
+        <div className="px-4 pb-2 space-y-2">
+          <Skeleton className="h-4 w-32 mb-2" />
+          {[0, 1].map((i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
+              <Skeleton className="w-8 h-8 rounded-full" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-2.5 w-16" />
+              </div>
+              <Skeleton className="h-3 w-10" />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* nav */}
+      <div className="flex-shrink-0 border-t border-border bg-card flex">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1.5 py-3">
+            <Skeleton className="w-5 h-5 rounded-md" />
+            <Skeleton className="h-2 w-10" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LeaderboardSkeleton() {
+  return (
+    <div className="px-4 pt-2 space-y-4">
+      <div className="flex items-end justify-center gap-3 h-28">
+        <div className="flex flex-col items-center gap-1.5 flex-1">
+          <Skeleton className="w-10 h-10 rounded-full" />
+          <Skeleton className="h-2.5 w-12" />
+          <Skeleton className="w-full h-16 rounded-t-xl" />
+        </div>
+        <div className="flex flex-col items-center gap-1.5 flex-1">
+          <Skeleton className="w-14 h-14 rounded-full" />
+          <Skeleton className="h-2.5 w-12" />
+          <Skeleton className="w-full h-24 rounded-t-xl" />
+        </div>
+        <div className="flex flex-col items-center gap-1.5 flex-1">
+          <Skeleton className="w-10 h-10 rounded-full" />
+          <Skeleton className="h-2.5 w-12" />
+          <Skeleton className="w-full h-12 rounded-t-xl" />
+        </div>
+      </div>
+      <div className="space-y-2">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
+            <Skeleton className="w-5 h-4" />
+            <Skeleton className="w-8 h-8 rounded-full" />
+            <Skeleton className="h-3 flex-1 max-w-[120px]" />
+            <Skeleton className="h-3 w-14" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Daily channel-join bonus card
+// ---------------------------------------------------------------------------
+function BonusCard({ onChanged }: { onChanged: () => void }) {
+  const { tg, haptic, hapticNotify } = useTelegram();
+  const toast = useToast();
+  const [bonus, setBonus] = useState<import("./api").BonusStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.getBonus().then(setBonus).catch(() => {});
+  }, []);
+
+  if (!bonus || bonus.claimed_today) return null;
+
+  const openChannel = () => {
+    haptic("light");
+    if (bonus.channel_username && tg?.openTelegramLink) {
+      tg.openTelegramLink(`https://t.me/${bonus.channel_username}`);
+    }
+  };
+
+  const claim = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.claimBonus();
+      hapticNotify("success");
+      toast.success(`+${bonus.amount} daqiqa qo'shildi`);
+      setBonus({ ...bonus, claimed_today: true });
+      onChanged();
+    } catch (e) {
+      const msg = e instanceof ApiError && e.status === 400
+        ? (e.message === "not_member"
+            ? "Avval kanalga qo'shiling"
+            : "Bugun allaqachon olgansiz")
+        : "Xatolik yuz berdi";
+      toast.error(msg);
+      if (e instanceof ApiError && e.message === "not_member") openChannel();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="px-4 pb-2">
+      <div className="bg-card border border-orange-500/30 rounded-2xl p-3.5 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-orange-500/15 flex items-center justify-center flex-shrink-0">
+          <Gift className="w-5 h-5 text-orange-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground">Get +{bonus.amount} free minutes today</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {bonus.is_member ? "Tap claim to collect your bonus" : `Join @${bonus.channel_username || "the channel"}`}
+          </p>
+        </div>
+        <button
+          onClick={bonus.is_member ? claim : openChannel}
+          disabled={busy}
+          className="bg-orange-500 text-white text-xs font-semibold px-4 py-2 rounded-xl flex-shrink-0 disabled:opacity-60"
+        >
+          {bonus.is_member ? (busy ? "…" : "Claim") : "Join"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -180,10 +352,14 @@ function SpeakingScreen({
   user,
   history,
   onFindPartner,
+  onChanged,
+  onOpenQuestions,
 }: {
   user: User;
   history: SessionHistoryItem[];
   onFindPartner: () => void;
+  onChanged: () => void;
+  onOpenQuestions: () => void;
 }) {
   const { haptic } = useTelegram();
   const [micActive, setMicActive] = useState(false);
@@ -196,24 +372,34 @@ function SpeakingScreen({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 bg-secondary rounded-full px-3 py-1.5">
             <Clock className="w-3.5 h-3.5 text-orange-400" />
-            <span className="text-xs font-semibold text-white">{user.total_minutes} min</span>
+            <span className="text-xs font-semibold text-foreground">
+              {user.is_premium ? "Premium" : `${user.remaining_today ?? user.free_daily_minutes} min`}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 bg-secondary rounded-full px-3 py-1.5">
             <Flame className="w-3.5 h-3.5 text-orange-400" />
-            <span className="text-xs font-semibold text-white">{user.streak}</span>
+            <span className="text-xs font-semibold text-foreground">{user.streak}</span>
           </div>
         </div>
 
-        <div className="bg-orange-500/15 border border-orange-500/30 rounded-full px-3 py-1">
-          <span className="text-xs font-bold text-orange-400 tracking-wide">{levelLabel(user.level)}</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { haptic("light"); onOpenQuestions(); }}
+            className="flex items-center gap-1.5 bg-secondary rounded-full px-3 py-1.5 text-xs font-semibold text-foreground"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-orange-400" /> Savollar
+          </button>
+          <div className="bg-orange-500/15 border border-orange-500/30 rounded-full px-3 py-1">
+            <span className="text-xs font-bold text-orange-400 tracking-wide">{levelLabel(user.level)}</span>
+          </div>
         </div>
       </div>
 
       {/* Center mic area */}
       <div className="flex-1 flex flex-col items-center justify-center gap-8 px-6">
         <div className="relative flex items-center justify-center">
-          <div className={cn("absolute w-64 h-64 rounded-full border transition-all duration-500", micActive ? "border-orange-500/30 scale-110" : "border-white/5")} />
-          <div className={cn("absolute w-48 h-48 rounded-full border transition-all duration-500", micActive ? "border-orange-500/20 scale-105" : "border-white/8")} />
+          <div className={cn("absolute w-64 h-64 rounded-full border transition-all duration-500", micActive ? "border-orange-500/30 scale-110" : "border-foreground/5")} />
+          <div className={cn("absolute w-48 h-48 rounded-full border transition-all duration-500", micActive ? "border-orange-500/20 scale-105" : "border-foreground/10")} />
 
           <button
             onPointerDown={() => { setMicActive(true); haptic("medium"); }}
@@ -236,14 +422,17 @@ function SpeakingScreen({
         </div>
 
         <div className="text-center space-y-1">
-          <p className="text-white font-semibold text-base">Tap to find a partner</p>
+          <p className="text-foreground font-semibold text-base">Tap to find a partner</p>
           <p className="text-muted-foreground text-xs">We'll connect you with someone to practice with</p>
         </div>
       </div>
 
+      {/* Daily bonus */}
+      {!user.is_premium && <BonusCard onChanged={onChanged} />}
+
       {/* Recent sessions */}
       <div className="px-4 pb-2">
-        <h3 className="text-sm font-semibold text-white mb-2">Recent Sessions</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-2">Recent Sessions</h3>
         {recent.length === 0 ? (
           <div className="bg-card border border-border rounded-2xl p-4 text-center">
             <p className="text-xs text-muted-foreground">No sessions yet. Tap the mic to start your first one.</p>
@@ -256,7 +445,7 @@ function SpeakingScreen({
                 <div key={s.id} className="bg-card rounded-2xl p-3 flex items-center gap-3 border border-border">
                   <Avatar name={partner} size="sm" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{partner}</p>
+                    <p className="text-sm font-semibold text-foreground truncate">{partner}</p>
                     <p className="text-xs text-muted-foreground truncate">{s.topic ?? "Practice"}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
@@ -274,138 +463,162 @@ function SpeakingScreen({
 }
 
 // ---------------------------------------------------------------------------
-// SCREEN: Finding Partner (starts a real session)
+// Real-time voice call overlay (matchmaking + WebRTC)
 // ---------------------------------------------------------------------------
-function FindingPartnerScreen({
-  onMatched,
-  onCancel,
-  onError,
-}: {
-  onMatched: (sessionId: number, partner: Partner) => void;
-  onCancel: () => void;
-  onError: (msg: string) => void;
-}) {
-  const { haptic } = useTelegram();
-  const [dots, setDots] = useState(".");
-
+function RemoteAudio({ stream }: { stream: MediaStream | null }) {
+  const ref = useRef<HTMLAudioElement>(null);
   useEffect(() => {
-    const interval = setInterval(() => setDots((d) => (d.length >= 3 ? "." : d + ".")), 500);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Kick off the real session; keep a small floor so the animation reads well.
-  useEffect(() => {
-    let cancelled = false;
-    const startedAt = Date.now();
-    api
-      .startSession()
-      .then((res) => {
-        const wait = Math.max(0, 1200 - (Date.now() - startedAt));
-        setTimeout(() => {
-          if (cancelled) {
-            // User left while we were matching: close the dangling session.
-            api.endSession(res.session_id).catch(() => {});
-            return;
-          }
-          haptic("heavy");
-          onMatched(res.session_id, res.partner);
-        }, wait);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        onError(e instanceof ApiError ? e.message : "Could not find a partner");
-      });
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className="flex flex-col items-center justify-center h-full px-8 text-center gap-8">
-      <div className="relative flex items-center justify-center">
-        <div className="absolute w-56 h-56 rounded-full border border-orange-500/10 animate-ping" style={{ animationDuration: "2s" }} />
-        <div className="absolute w-44 h-44 rounded-full border border-orange-500/15 animate-ping" style={{ animationDuration: "2.5s", animationDelay: "0.5s" }} />
-        <div
-          className="w-28 h-28 rounded-full flex items-center justify-center"
-          style={{ background: "radial-gradient(circle at 35% 35%, #fb923c, #f97316, #ea580c)", boxShadow: "0 0 50px rgba(249,115,22,0.4), 0 8px 32px rgba(0,0,0,0.5)" }}
-        >
-          <Search className="w-14 h-14 text-white" strokeWidth={1.5} />
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <h2 className="text-2xl font-bold text-white">Finding a Partner{dots}</h2>
-        <p className="text-muted-foreground text-sm leading-relaxed max-w-xs">Looking for someone at your level to practice with</p>
-      </div>
-
-      <button
-        onClick={() => { haptic("light"); onCancel(); }}
-        className="flex items-center gap-2 bg-secondary border border-border rounded-2xl px-6 py-3 text-sm font-semibold text-white"
-      >
-        <X className="w-4 h-4" />
-        Cancel
-      </button>
-    </div>
-  );
+    if (ref.current && stream) {
+      ref.current.srcObject = stream;
+      ref.current.play().catch(() => {});
+    }
+  }, [stream]);
+  return <audio ref={ref} autoPlay playsInline className="hidden" />;
 }
 
-// ---------------------------------------------------------------------------
-// SCREEN: Call (live session, tracks duration, ends via API)
-// ---------------------------------------------------------------------------
-function CallScreen({
-  partner,
-  sessionId,
-  onEnd,
-}: {
-  partner: Partner;
-  sessionId: number;
-  onEnd: (sessionId: number) => Promise<void>;
-}) {
+function VoiceOverlay({ onClose }: { onClose: () => void }) {
   const { haptic, hapticNotify } = useTelegram();
-  const [elapsed, setElapsed] = useState(0);
-  const [ending, setEnding] = useState(false);
+  const toast = useToast();
+  const v = useVoiceCall();
+  const started = useRef(false);
+  const [rateBusy, setRateBusy] = useState(false);
 
-  useEffect(() => {
-    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const handleEnd = async () => {
-    if (ending) return;
-    setEnding(true);
-    haptic("heavy");
-    await onEnd(sessionId);
-    hapticNotify("success");
+  const ratePartner = async (n: number) => {
+    if (rateBusy || !v.partner) { onClose(); return; }
+    setRateBusy(true);
+    haptic("light");
+    try { await api.ratePartner(v.partner.id, n); toast.success("Rahmat!"); }
+    catch { /* non-blocking */ }
+    onClose();
   };
 
+  useEffect(() => {
+    if (!started.current) { started.current = true; v.start(); }
+  }, [v]);
+
+  useEffect(() => {
+    if (v.state === "in_call") {
+      hapticNotify("success");
+      toast.success("Hamroh topildi — suhbat boshlandi");
+    }
+  }, [v.state, hapticNotify, toast]);
+
+  useEffect(() => {
+    if (v.state === "error") toast.error(v.error || "Ovozli aloqa xatosi");
+  }, [v.state, v.error, toast]);
+
+  const close = () => { haptic("heavy"); v.hangup(); onClose(); };
+
+  // Searching / connecting
+  if (v.state === "searching" || v.state === "connecting") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-8 text-center gap-8">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute w-56 h-56 rounded-full border border-orange-500/10 animate-ping" style={{ animationDuration: "2s" }} />
+          <div className="absolute w-44 h-44 rounded-full border border-orange-500/15 animate-ping" style={{ animationDuration: "2.5s", animationDelay: "0.5s" }} />
+          <div className="w-28 h-28 rounded-full flex items-center justify-center"
+            style={{ background: "radial-gradient(circle at 35% 35%, #fb923c, #f97316, #ea580c)", boxShadow: "0 0 50px rgba(249,115,22,0.4)" }}>
+            <Search className="w-14 h-14 text-white" strokeWidth={1.5} />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-foreground">
+            {v.state === "connecting" ? "Ulanmoqda…" : "Hamroh qidirilmoqda…"}
+          </h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            {v.state === "connecting" ? "Ovozli aloqa o'rnatilmoqda" : "Sizning darajangizdagi suhbatdosh qidirilmoqda"}
+          </p>
+        </div>
+        <button onClick={close} className="flex items-center gap-2 bg-secondary border border-border rounded-2xl px-6 py-3 text-sm font-semibold text-foreground">
+          <X className="w-4 h-4" /> Bekor qilish
+        </button>
+      </div>
+    );
+  }
+
+  if (v.state === "error") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-8 text-center gap-6">
+        <div className="w-14 h-14 rounded-2xl bg-red-500/15 flex items-center justify-center">
+          <AlertTriangle className="w-7 h-7 text-red-400" />
+        </div>
+        <p className="text-sm text-muted-foreground max-w-xs">{v.error || "Xatolik yuz berdi"}</p>
+        <button onClick={onClose} className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl">Yopish</button>
+      </div>
+    );
+  }
+
+  if (v.state === "ended") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-8 text-center gap-6">
+        <CheckCircle className="w-12 h-12 text-emerald-400" />
+        <h2 className="text-xl font-bold text-foreground">Suhbat tugadi</h2>
+        {v.partner ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {v.partner.name} bilan suhbatni baholang
+            </p>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => ratePartner(n)} disabled={rateBusy} className="p-1">
+                  <Star className="w-9 h-9 text-yellow-400" strokeWidth={1.5} />
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} className="text-sm text-muted-foreground underline">
+              O'tkazib yuborish
+            </button>
+          </>
+        ) : (
+          <button onClick={onClose} className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl">Yopish</button>
+        )}
+      </div>
+    );
+  }
+
+  // In call
   return (
     <div className="flex flex-col items-center justify-center h-full px-8 text-center gap-8">
+      <RemoteAudio stream={v.remoteStream} />
+      {(v.quality === "poor" || v.quality === "bad") && (
+        <div className={cn(
+          "fixed top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold",
+          v.quality === "bad" ? "bg-red-500/20 text-red-300" : "bg-amber-500/20 text-amber-300"
+        )}>
+          <AlertTriangle className="w-3.5 h-3.5" />
+          {v.quality === "bad" ? "Internet juda sekin — ovoz kechikishi mumkin" : "Internet sekin"}
+        </div>
+      )}
       <div className="flex flex-col items-center gap-3">
         <div className="relative">
-          <Avatar name={partner.display_name} size="lg" />
+          <Avatar name={v.partner?.name ?? "?"} size="lg" />
           <span className="absolute inset-0 rounded-full border-2 border-orange-500/40 animate-ping" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-white">{partner.display_name}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {partner.topic} · {partner.accent} accent{partner.is_ai ? " · AI tutor" : ""}
-          </p>
+          <h2 className="text-2xl font-bold text-foreground">{v.partner?.name ?? "Hamroh"}</h2>
+          <p className="text-sm text-muted-foreground mt-1">Jonli ovozli suhbat</p>
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <span className="text-4xl font-bold text-white tabular-nums">{fmtClock(elapsed)}</span>
-        <span className="text-xs text-muted-foreground">Speaking time</span>
+        <span className="text-4xl font-bold text-foreground tabular-nums">{fmtClock(v.elapsed)}</span>
+        <span className="text-xs text-muted-foreground">Suhbat vaqti</span>
       </div>
 
-      <button
-        onClick={handleEnd}
-        disabled={ending}
-        className="flex items-center gap-2 bg-red-500 disabled:opacity-60 rounded-full px-8 py-4 text-sm font-bold text-white"
-        style={{ boxShadow: "0 8px 32px rgba(239,68,68,0.35)" }}
-      >
-        {ending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PhoneOff className="w-5 h-5" />}
-        {ending ? "Ending…" : "End Call"}
-      </button>
+      <InCallTopic onHaptic={() => haptic("light")} />
+
+      <div className="flex items-center gap-4">
+        <button onClick={() => { haptic("light"); v.toggleMute(); }}
+          className={cn("w-14 h-14 rounded-full flex items-center justify-center border transition-all",
+            v.muted ? "bg-foreground/10 border-foreground/20 text-foreground" : "bg-secondary border-border text-muted-foreground")}>
+          {v.muted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+        </button>
+        <button onClick={close}
+          className="flex items-center gap-2 bg-red-500 rounded-full px-8 py-4 text-sm font-bold text-white"
+          style={{ boxShadow: "0 8px 32px rgba(239,68,68,0.35)" }}>
+          <PhoneOff className="w-5 h-5" /> Tugatish
+        </button>
+      </div>
     </div>
   );
 }
@@ -415,6 +628,7 @@ function CallScreen({
 // ---------------------------------------------------------------------------
 function LeaderboardScreen() {
   const { haptic } = useTelegram();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<LeaderTab>("speakers");
   const [data, setData] = useState<Leaderboard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -423,21 +637,35 @@ function LeaderboardScreen() {
     let alive = true;
     api.leaderboard()
       .then((d) => alive && setData(d))
-      .catch((e) => alive && setError(e instanceof ApiError ? e.message : "Failed to load"));
+      .catch((e) => {
+        if (!alive) return;
+        const msg = e instanceof ApiError ? e.message : "Failed to load";
+        setError(msg);
+        toast.error(msg);
+      });
     return () => { alive = false; };
-  }, []);
+  }, [toast]);
 
   const tabs: { id: LeaderTab; label: string }[] = [
     { id: "speakers", label: "Top Speakers" },
+    { id: "rated", label: "Top Rated" },
     { id: "streak", label: "Streak" },
   ];
 
   const rows = data
-    ? [...data.week].sort((a, b) => (activeTab === "streak" ? b.streak - a.streak : b.minutes - a.minutes))
+    ? [...data.week]
+        .filter((r) => (activeTab === "rated" ? r.rating_count >= 3 : true)) // need ≥3 ratings to rank
+        .sort((a, b) =>
+          activeTab === "streak" ? b.streak - a.streak
+          : activeTab === "rated" ? b.rating - a.rating
+          : b.minutes - a.minutes
+        )
     : [];
 
   const valueOf = (r: Leaderboard["week"][number]) =>
-    activeTab === "streak" ? `${r.streak} days` : `${r.minutes.toLocaleString()} min`;
+    activeTab === "streak" ? `${r.streak} days`
+    : activeTab === "rated" ? `★ ${r.rating.toFixed(1)}`
+    : `${r.minutes.toLocaleString()} min`;
 
   const meInTop = rows.some((r) => r.is_me);
   const medalColors = ["#f59e0b", "#94a3b8", "#b45309"];
@@ -447,7 +675,7 @@ function LeaderboardScreen() {
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center gap-2 mb-4">
           <Trophy className="w-6 h-6 text-orange-400" />
-          <h1 className="text-xl font-bold text-white">Leaderboard</h1>
+          <h1 className="text-xl font-bold text-foreground">Leaderboard</h1>
         </div>
         <div className="bg-secondary rounded-2xl p-1 flex">
           {tabs.map((tab) => (
@@ -465,13 +693,14 @@ function LeaderboardScreen() {
         </div>
       </div>
 
+      {/* Loading skeleton */}
+      {!data && !error && <LeaderboardSkeleton />}
+
       {error && <p className="px-4 text-sm text-red-400">{error}</p>}
 
-      {!error && rows.length === 0 && (
+      {data && rows.length === 0 && (
         <div className="flex-1 flex items-center justify-center px-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            {data ? "No one has practiced this week yet. Be the first!" : "Loading…"}
-          </p>
+          <p className="text-sm text-muted-foreground">No one has practiced this week yet. Be the first!</p>
         </div>
       )}
 
@@ -481,7 +710,7 @@ function LeaderboardScreen() {
             {/* 2nd */}
             <div className="flex flex-col items-center gap-1.5 flex-1">
               <Avatar name={rows[1].name} size="md" />
-              <p className="text-xs font-semibold text-white truncate w-full text-center">{rows[1].name.split(" ")[0]}</p>
+              <p className="text-xs font-semibold text-foreground truncate w-full text-center">{rows[1].name.split(" ")[0]}</p>
               <div className="w-full rounded-t-xl flex items-center justify-center h-16" style={{ background: "linear-gradient(180deg, #475569 0%, #334155 100%)" }}>
                 <Medal className="w-5 h-5" style={{ color: medalColors[1] }} />
               </div>
@@ -490,7 +719,7 @@ function LeaderboardScreen() {
             <div className="flex flex-col items-center gap-1.5 flex-1">
               <Crown className="w-5 h-5 text-amber-400" />
               <Avatar name={rows[0].name} size="lg" />
-              <p className="text-xs font-semibold text-white truncate w-full text-center">{rows[0].name.split(" ")[0]}</p>
+              <p className="text-xs font-semibold text-foreground truncate w-full text-center">{rows[0].name.split(" ")[0]}</p>
               <div className="w-full rounded-t-xl flex items-center justify-center h-24" style={{ background: "linear-gradient(180deg, #f97316 0%, #ea580c 100%)" }}>
                 <Medal className="w-6 h-6" style={{ color: medalColors[0] }} />
               </div>
@@ -498,7 +727,7 @@ function LeaderboardScreen() {
             {/* 3rd */}
             <div className="flex flex-col items-center gap-1.5 flex-1">
               <Avatar name={rows[2].name} size="md" />
-              <p className="text-xs font-semibold text-white truncate w-full text-center">{rows[2].name.split(" ")[0]}</p>
+              <p className="text-xs font-semibold text-foreground truncate w-full text-center">{rows[2].name.split(" ")[0]}</p>
               <div className="w-full rounded-t-xl flex items-center justify-center h-12" style={{ background: "linear-gradient(180deg, #92400e 0%, #78350f 100%)" }}>
                 <Medal className="w-4 h-4" style={{ color: medalColors[2] }} />
               </div>
@@ -525,8 +754,7 @@ function LeaderboardScreen() {
               </span>
               <Avatar name={r.name} size="sm" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{r.is_me ? "You" : r.name}</p>
-                {r.username && <p className="text-xs text-muted-foreground truncate">@{r.username}</p>}
+                <p className="text-sm font-semibold text-foreground truncate">{r.is_me ? "Siz" : r.name}</p>
               </div>
               <span className="text-sm font-bold text-orange-400 flex-shrink-0">{valueOf(r)}</span>
             </div>
@@ -541,7 +769,7 @@ function LeaderboardScreen() {
                   <UserIcon className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white">You</p>
+                  <p className="text-sm font-semibold text-foreground">You</p>
                   <p className="text-xs text-muted-foreground">Keep going! 🔥</p>
                 </div>
                 <span className="text-sm font-bold text-orange-400 flex-shrink-0">{data.me.minutes} min</span>
@@ -559,13 +787,25 @@ function LeaderboardScreen() {
 // ---------------------------------------------------------------------------
 function InviteScreen({ user }: { user: User }) {
   const { tg, haptic, hapticNotify } = useTelegram();
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
-  const refLink = `https://t.me/${BOT_USERNAME}?start=ref_${user.telegram_id}`;
+  const [info, setInfo] = useState<import("./api").ReferralInfo | null>(null);
+
+  useEffect(() => {
+    api.getReferral().then(setInfo).catch(() => {});
+  }, []);
+
+  const refLink = info?.link ?? `https://t.me/${BOT_USERNAME}?start=ref_${user.telegram_id}`;
+  const joined = info?.joined ?? 0;
+  const next = info?.next_tier ?? null;
+  const remaining = next ? Math.max(next.friends - joined, 0) : 0;
+  const progress = next ? Math.min((joined / next.friends) * 100, 100) : 100;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(refLink).catch(() => {});
     setCopied(true);
     hapticNotify("success");
+    toast.success("Havola nusxalandi");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -578,25 +818,38 @@ function InviteScreen({ user }: { user: User }) {
 
   return (
     <div className="flex flex-col h-full px-4 pt-6 gap-6">
-      <div className="bg-gradient-to-br from-orange-500/20 via-orange-500/10 to-transparent border border-orange-500/20 rounded-3xl p-6 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-orange-500 flex items-center justify-center mx-auto mb-4">
-          <UserPlus className="w-8 h-8 text-white" />
+      <div className="bg-gradient-to-br from-orange-500/20 via-orange-500/10 to-transparent border border-orange-500/20 rounded-3xl p-6">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-orange-500 flex items-center justify-center flex-shrink-0">
+            <Gift className="w-7 h-7 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-foreground">{info?.days_earned ?? 0} days of Premium earned</h2>
+            <p className="text-muted-foreground text-sm">{joined} {joined === 1 ? "friend" : "friends"} joined</p>
+          </div>
         </div>
-        <h2 className="text-xl font-bold text-white mb-2">Invite friends</h2>
-        <p className="text-muted-foreground text-sm leading-relaxed">
-          Share your link so friends can join SpeakUp and practice speaking with you.
-        </p>
+        {next && (
+          <div className="mt-4">
+            <p className="text-sm text-foreground mb-2">
+              <span className="text-orange-400 font-semibold">{remaining} more</span> to unlock{" "}
+              <span className="font-semibold">+{next.days} {next.days === 1 ? "day" : "days"}</span>
+            </p>
+            <div className="h-2 rounded-full bg-secondary overflow-hidden">
+              <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-3">
-        <p className="text-sm font-semibold text-white">Your referral link</p>
+        <p className="text-sm font-semibold text-foreground">Your referral link</p>
         <div className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
           <p className="flex-1 text-xs text-muted-foreground truncate font-mono">{refLink}</p>
           <button
             onClick={handleCopy}
             className={cn(
               "flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl transition-all",
-              copied ? "bg-green-500/20 text-green-400" : "bg-orange-500 text-white"
+              copied ? "bg-green-500/20 text-green-500" : "bg-orange-500 text-white"
             )}
           >
             {copied ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -606,28 +859,71 @@ function InviteScreen({ user }: { user: User }) {
 
         <button
           onClick={handleShare}
-          className="w-full flex items-center justify-center gap-2 bg-secondary border border-border rounded-2xl py-3.5 text-sm font-semibold text-white"
+          className="w-full flex items-center justify-center gap-2 bg-secondary border border-border rounded-2xl py-3.5 text-sm font-semibold text-foreground"
         >
           <Share2 className="w-4 h-4 text-orange-400" />
           Share via Telegram
         </button>
       </div>
 
-      <div className="space-y-2">
-        <p className="text-sm font-semibold text-white">How it works</p>
-        {[
-          { step: "1", text: "Share your unique link with friends" },
-          { step: "2", text: "They open SpeakUp using your link" },
-          { step: "3", text: "Practice together and climb the leaderboard" },
-        ].map((item) => (
-          <div key={item.step} className="flex items-center gap-3 bg-card border border-border rounded-2xl p-3">
-            <div className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
-              <span className="text-xs font-bold text-white">{item.step}</span>
+      <div className="space-y-2 pb-4">
+        <p className="text-sm font-semibold text-foreground">Rewards</p>
+        {(info?.tiers ?? []).map((t) => {
+          const unlocked = joined >= t.friends;
+          return (
+            <div
+              key={t.friends}
+              className={cn(
+                "flex items-center gap-3 bg-card rounded-2xl p-3.5 border",
+                unlocked ? "border-orange-500/40" : "border-border"
+              )}
+            >
+              <div className={cn(
+                "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold",
+                unlocked ? "bg-orange-500 text-white" : "bg-secondary text-muted-foreground"
+              )}>
+                {unlocked ? <CheckCircle className="w-4 h-4" /> : t.friends}
+              </div>
+              <p className="flex-1 text-sm font-semibold text-foreground">
+                {t.friends} {t.friends === 1 ? "friend" : "friends"}
+              </p>
+              <span className="text-sm font-semibold text-muted-foreground">
+                {t.days} {t.days === 1 ? "day" : "days"}
+              </span>
             </div>
-            <p className="text-sm text-muted-foreground">{item.text}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Appearance (theme) control
+// ---------------------------------------------------------------------------
+function ThemeControl() {
+  const { mode, setMode } = useTheme();
+  const { haptic } = useTelegram();
+  const opts: { id: ThemeMode; label: string; icon: ReactNode }[] = [
+    { id: "auto", label: "Auto", icon: <Smartphone className="w-4 h-4" /> },
+    { id: "light", label: "Light", icon: <Sun className="w-4 h-4" /> },
+    { id: "dark", label: "Dark", icon: <Moon className="w-4 h-4" /> },
+  ];
+  return (
+    <div className="bg-secondary rounded-2xl p-1 flex">
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          onClick={() => { setMode(o.id); haptic("light"); }}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-xl transition-all duration-200",
+            mode === o.id ? "bg-orange-500 text-white shadow-sm" : "text-muted-foreground"
+          )}
+        >
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -635,9 +931,17 @@ function InviteScreen({ user }: { user: User }) {
 // ---------------------------------------------------------------------------
 // SCREEN: Profile
 // ---------------------------------------------------------------------------
-function ProfileScreen({ user }: { user: User }) {
+function ProfileScreen({ user, onOpen }: { user: User; onOpen: (page: SubPage) => void }) {
+  const { haptic } = useTelegram();
   const displayName = user.first_name ?? user.username ?? "You";
   const username = user.username ? `@${user.username}` : `id ${user.telegram_id}`;
+
+  const menu: { icon: ReactNode; label: string; page: SubPage }[] = [
+    { icon: <Crown className="w-4 h-4" />, label: "Premium", page: "premium" },
+    { icon: <Star className="w-4 h-4" />, label: "My Progress", page: "progress" },
+    { icon: <Clock className="w-4 h-4" />, label: "Call History", page: "history" },
+    { icon: <Volume2 className="w-4 h-4" />, label: "Leave feedback", page: "feedback" },
+  ];
 
   const stats = [
     { label: "Total Minutes", value: `${user.total_minutes}`, icon: <Clock className="w-4 h-4 text-orange-400" /> },
@@ -663,7 +967,7 @@ function ProfileScreen({ user }: { user: User }) {
           {initialsOf(displayName)}
         </div>
         <div className="text-center">
-          <h2 className="text-lg font-bold text-white">{displayName}</h2>
+          <h2 className="text-lg font-bold text-foreground">{displayName}</h2>
           <p className="text-sm text-muted-foreground">{username}</p>
         </div>
         <div className="bg-orange-500/15 border border-orange-500/30 rounded-full px-4 py-1.5">
@@ -678,12 +982,28 @@ function ProfileScreen({ user }: { user: User }) {
               {stat.icon}
               <span className="text-xs text-muted-foreground">{stat.label}</span>
             </div>
-            <p className="text-xl font-bold text-white">{stat.value}</p>
+            <p className="text-xl font-bold text-foreground">{stat.value}</p>
           </div>
         ))}
       </div>
 
       <div className="px-4 space-y-2 flex-1 overflow-y-auto pb-4">
+        <div className="space-y-2 mb-3">
+          {menu.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => { haptic("light"); onOpen(item.page); }}
+              className="w-full bg-card border border-border rounded-2xl p-3.5 flex items-center gap-3 text-left"
+            >
+              <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center text-orange-400 flex-shrink-0">
+                {item.icon}
+              </div>
+              <p className="flex-1 text-sm font-semibold text-foreground">{item.label}</p>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+          ))}
+        </div>
+
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-3">My profile</p>
         {profileRows.map((item) => (
           <div key={item.label} className="w-full bg-card border border-border rounded-2xl p-3.5 flex items-center gap-3 text-left">
@@ -691,11 +1011,345 @@ function ProfileScreen({ user }: { user: User }) {
               {item.icon}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white">{item.label}</p>
+              <p className="text-sm font-semibold text-foreground">{item.label}</p>
               <p className="text-xs text-muted-foreground">{item.sub}</p>
             </div>
           </div>
         ))}
+
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-3 pt-3">Appearance</p>
+        <ThemeControl />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-page header (back row)
+// ---------------------------------------------------------------------------
+function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  const { haptic } = useTelegram();
+  return (
+    <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b border-border">
+      <button onClick={() => { haptic("light"); onBack(); }} className="text-orange-400">
+        <ChevronLeft className="w-6 h-6" />
+      </button>
+      <h1 className="text-lg font-bold text-foreground">{title}</h1>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SCREEN: Premium (plans + Stars / card payment)
+// ---------------------------------------------------------------------------
+function PremiumScreen({ user, onBack }: { user: User; onBack: () => void }) {
+  const { tg, haptic, hapticNotify } = useTelegram();
+  const toast = useToast();
+  const [plans, setPlans] = useState<import("./api").Plan[]>([]);
+  const [reviews, setReviews] = useState<import("./api").Review[]>([]);
+  const [view, setView] = useState<"plans" | "card">("plans");
+  const [card, setCard] = useState<import("./api").CardInfo | null>(null);
+  const [cardPlan, setCardPlan] = useState<import("./api").Plan | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.getPlans().then(setPlans).catch(() => {});
+    api.getReviews().then(setReviews).catch(() => {});
+  }, []);
+
+  const payStars = async (planId: number) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { link } = await api.payStars(planId);
+      const wa = tg as any;
+      if (wa?.openInvoice) {
+        wa.openInvoice(link, (status: string) => {
+          if (status === "paid") { hapticNotify("success"); toast.success("Premium faollashtirildi!"); onBack(); }
+          else if (status === "failed") toast.error("To'lov amalga oshmadi");
+        });
+      } else if (tg?.openTelegramLink) {
+        tg.openTelegramLink(link);
+      }
+    } catch {
+      toast.error("To'lovni boshlab bo'lmadi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openCard = async (plan: import("./api").Plan) => {
+    haptic("light");
+    try {
+      const info = await api.getCardInfo(plan.id);
+      setCard(info); setCardPlan(plan); setView("card");
+    } catch {
+      toast.error("Karta ma'lumotlari yo'q");
+    }
+  };
+
+  const sendScreenshot = async () => {
+    if (!cardPlan || busy) return;
+    setBusy(true);
+    try {
+      const { bot_deeplink } = await api.payCard(cardPlan.id);
+      if (tg?.openTelegramLink) tg.openTelegramLink(bot_deeplink);
+      else window.open(bot_deeplink, "_blank");
+    } catch {
+      toast.error("Xatolik");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (view === "card" && card) {
+    return (
+      <div className="flex flex-col h-full">
+        <SubHeader title="Premium" onBack={() => setView("plans")} />
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          <h2 className="text-base font-bold text-foreground">Payment Details</h2>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Card Number</p>
+            <div className="bg-secondary rounded-2xl p-4 flex items-center justify-between">
+              <span className="text-lg font-mono text-foreground tracking-wide">{card.card_number}</span>
+              <button
+                onClick={() => { navigator.clipboard.writeText(card.card_number.replace(/\s/g, "")).catch(() => {}); toast.success("Nusxalandi"); }}
+                className="text-orange-400 text-sm font-semibold"
+              >Copy</button>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Card Holder</p>
+            <div className="bg-secondary rounded-2xl p-4"><span className="text-foreground">{card.card_holder}</span></div>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Amount</p>
+            <div className="bg-secondary rounded-2xl p-4"><span className="text-foreground font-bold">{card.amount_uzs.toLocaleString()} so'm</span></div>
+          </div>
+          <button
+            onClick={sendScreenshot}
+            disabled={busy}
+            className="w-full bg-orange-500 text-white font-semibold py-4 rounded-2xl disabled:opacity-60"
+          >📷 Send Screenshot to Admin</button>
+          <p className="text-xs text-muted-foreground text-center">
+            After payment, send the screenshot to the admin. You'll get access once it's confirmed.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <SubHeader title="Premium" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {user.is_premium && (
+          <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-2xl p-4 flex items-center gap-3">
+            <Crown className="w-6 h-6 text-emerald-400" />
+            <p className="text-sm text-foreground">
+              Premium active{user.premium_until ? ` until ${new Date(user.premium_until).toLocaleDateString()}` : ""}
+            </p>
+          </div>
+        )}
+
+        {reviews.length > 0 && (
+          <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4">
+            {reviews.map((r) => (
+              <div key={r.id} className="bg-card border border-border rounded-2xl p-4 min-w-[220px] max-w-[240px]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold text-foreground truncate">{r.name}</span>
+                  <span className="text-xs text-muted-foreground">{timeAgo(r.created_at)}</span>
+                </div>
+                <div className="text-yellow-400 text-sm mb-2">{"★".repeat(Math.max(1, Math.min(5, r.rating)))}</div>
+                <p className="text-sm text-muted-foreground">{r.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {plans.map((p) => (
+          <div
+            key={p.id}
+            className={cn(
+              "bg-card rounded-3xl p-5 border",
+              p.is_popular ? "border-orange-500/50" : "border-border"
+            )}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xl font-bold text-foreground">{p.title}</h3>
+              {p.is_popular && (
+                <span className="text-xs font-semibold text-orange-400 bg-orange-500/15 rounded-full px-3 py-1">Most popular</span>
+              )}
+            </div>
+            <p className="text-2xl font-bold text-foreground">
+              {p.price_uzs.toLocaleString()} <span className="text-sm font-normal text-muted-foreground">UZS</span>
+            </p>
+            <p className="text-sm text-muted-foreground mb-4">or {p.price_stars} ⭐ Stars</p>
+            <button
+              onClick={() => payStars(p.id)}
+              disabled={busy}
+              className="w-full bg-[#6366f1] text-white font-semibold py-3.5 rounded-2xl mb-2 disabled:opacity-60"
+            >⭐ Pay with Stars</button>
+            <button
+              onClick={() => openCard(p)}
+              className="w-full bg-secondary border border-border text-foreground font-semibold py-3.5 rounded-2xl"
+            >💳 Pay by card transfer</button>
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              Auto-renews every {p.duration_days} days. Cancel anytime in Telegram.
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SCREEN: My Progress
+// ---------------------------------------------------------------------------
+function ProgressScreen({ onBack }: { onBack: () => void }) {
+  const [data, setData] = useState<import("./api").Progress | null>(null);
+
+  useEffect(() => {
+    api.getProgress().then(setData).catch(() => {});
+  }, []);
+
+  const max = data ? Math.max(1, ...data.by_day.map((d) => d.minutes)) : 1;
+  const stats = data
+    ? [
+        { label: "Total minutes", value: `${data.total_minutes}` },
+        { label: "Sessions", value: `${data.total_sessions}` },
+        { label: "Streak", value: `${data.streak} days` },
+        { label: "Best day", value: `${data.best_day} min` },
+      ]
+    : [];
+
+  return (
+    <div className="flex flex-col h-full">
+      <SubHeader title="My Progress" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          {stats.map((s) => (
+            <div key={s.label} className="bg-card border border-border rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
+              <p className="text-xl font-bold text-foreground">{s.value}</p>
+            </div>
+          ))}
+        </div>
+        {data && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <p className="text-sm font-semibold text-foreground mb-3">Last 30 days</p>
+            <div className="flex items-end gap-0.5 h-32">
+              {data.by_day.map((d) => (
+                <div
+                  key={d.date}
+                  className="flex-1 bg-orange-500/70 rounded-t"
+                  style={{ height: `${Math.max((d.minutes / max) * 100, 2)}%` }}
+                  title={`${d.date}: ${d.minutes} min`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SCREEN: Call History
+// ---------------------------------------------------------------------------
+function CallHistoryScreen({ history, onBack }: { history: SessionHistoryItem[]; onBack: () => void }) {
+  const done = history.filter((s) => s.end_time);
+  return (
+    <div className="flex flex-col h-full">
+      <SubHeader title="Call History" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+        {done.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center pt-8">No calls yet.</p>
+        ) : (
+          done.map((s) => {
+            const partner = s.partner_name ?? "Partner";
+            return (
+              <div key={s.id} className="bg-card rounded-2xl p-3 flex items-center gap-3 border border-border">
+                <Avatar name={partner} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{partner}</p>
+                  <p className="text-xs text-muted-foreground truncate">{s.topic ?? "Practice"}</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs font-semibold text-orange-400">{minutesFromSec(s.duration_sec)} min</p>
+                  <p className="text-xs text-muted-foreground">{timeAgo(s.start_time)}</p>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SCREEN: Leave feedback
+// ---------------------------------------------------------------------------
+function FeedbackScreen({ onBack }: { onBack: () => void }) {
+  const { hapticNotify } = useTelegram();
+  const toast = useToast();
+  const [rating, setRating] = useState(5);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.postFeedback(rating, text.trim());
+      hapticNotify("success");
+      toast.success("Rahmat! Fikringiz yuborildi.");
+      onBack();
+    } catch {
+      toast.error("Yuborib bo'lmadi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <SubHeader title="Leave feedback" onBack={onBack} />
+      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
+        <div>
+          <p className="text-sm font-semibold text-foreground mb-2">Your rating</p>
+          <div className="flex gap-2">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} onClick={() => setRating(n)} className="p-1">
+                <Star
+                  className={cn("w-8 h-8", n <= rating ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground")}
+                  strokeWidth={1.5}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground mb-2">Your feedback</p>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={5}
+            maxLength={1024}
+            placeholder="Tell us what you think…"
+            className="w-full bg-card border border-border rounded-2xl p-3 text-sm text-foreground resize-none outline-none focus:border-orange-500/50"
+          />
+        </div>
+        <button
+          onClick={submit}
+          disabled={busy}
+          className="w-full bg-orange-500 text-white font-semibold py-3.5 rounded-2xl disabled:opacity-60"
+        >
+          {busy ? "Sending…" : "Send feedback"}
+        </button>
       </div>
     </div>
   );
@@ -741,6 +1395,7 @@ function BottomNav({ active, onChange }: { active: NavTab; onChange: (tab: NavTa
 type Phase = "loading" | "error" | "ready";
 
 export default function App() {
+  const toast = useToast();
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [user, setUser] = useState<User | null>(null);
@@ -748,15 +1403,13 @@ export default function App() {
 
   const [activeNav, setActiveNav] = useState<NavTab>("speaking");
   const [finding, setFinding] = useState(false);
-  const [call, setCall] = useState<{ sessionId: number; partner: Partner } | null>(null);
   const findingRef = useRef(false);
+  const [sub, setSub] = useState<SubPage | null>(null);
 
-  // Theme / layout setup.
+  // Layout setup (theme/background handled by ThemeProvider).
   useEffect(() => {
-    document.documentElement.classList.add("dark");
     document.documentElement.style.fontFamily = "'Inter', system-ui, sans-serif";
     document.body.style.overflow = "hidden";
-    document.body.style.background = "#111111";
   }, []);
 
   const loadAll = useCallback(async () => {
@@ -777,38 +1430,55 @@ export default function App() {
       });
   }, [loadAll]);
 
-  // Telegram BackButton during finding / call.
+  // Opened from the bot's "Join now" button (?find=1) → jump straight into search.
+  const autoFind = useRef(false);
+  useEffect(() => {
+    if (phase !== "ready" || autoFind.current) return;
+    const wantsFind = new URLSearchParams(window.location.search).get("find") === "1";
+    if (wantsFind && !findingRef.current) {
+      autoFind.current = true;
+      findingRef.current = true;
+      setActiveNav("speaking");
+      setFinding(true);
+    }
+  }, [phase]);
+
+  // Telegram BackButton during finding / call / sub-page.
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (!tg) return;
-    const show = finding;
-    if (show) {
+    if (finding) {
       tg.BackButton.show();
-      const cb = () => setFinding(false);
+      // Reset the ref too, else re-tapping "start talking" is blocked. The
+      // overlay unmounts → its cleanup closes the socket → server dequeues us.
+      const cb = () => { findingRef.current = false; setFinding(false); loadAll().catch(() => {}); };
+      tg.BackButton.onClick(cb);
+      return () => { tg.BackButton.offClick(cb); tg.BackButton.hide(); };
+    }
+    if (sub) {
+      tg.BackButton.show();
+      const cb = () => { setSub(null); loadAll().catch(() => {}); };
       tg.BackButton.onClick(cb);
       return () => { tg.BackButton.offClick(cb); tg.BackButton.hide(); };
     }
     tg.BackButton.hide();
-  }, [finding]);
+  }, [finding, sub]);
 
-  const handleEndCall = useCallback(async (sessionId: number) => {
-    try {
-      await api.endSession(sessionId);
-    } catch {
-      /* surface nothing destructive; still refresh below */
-    }
-    setCall(null);
-    await loadAll().catch(() => {});
-  }, [loadAll]);
+  const handleRetry = () => {
+    setPhase("loading");
+    loadAll()
+      .then(() => setPhase("ready"))
+      .catch((e) => {
+        const msg = e instanceof ApiError ? e.message : "Could not reach the server";
+        setErrorMsg(msg);
+        toast.error(msg);
+        setPhase("error");
+      });
+  };
 
   // ---- Render gates ----
   if (phase === "loading") {
-    return (
-      <Centered>
-        <Loader2 className="w-10 h-10 text-orange-400 animate-spin" />
-        <p className="text-sm text-muted-foreground">Loading SpeakUp…</p>
-      </Centered>
-    );
+    return <AppSkeleton />;
   }
 
   if (phase === "error" || !user) {
@@ -817,62 +1487,57 @@ export default function App() {
         <div className="w-14 h-14 rounded-2xl bg-red-500/15 flex items-center justify-center">
           <AlertTriangle className="w-7 h-7 text-red-400" />
         </div>
-        <h1 className="text-lg font-bold text-white">Can't load your profile</h1>
+        <h1 className="text-lg font-bold text-foreground">Can't load your profile</h1>
         <p className="text-sm text-muted-foreground max-w-xs">{errorMsg}</p>
         <p className="text-xs text-muted-foreground max-w-xs">
           Open this app from the SpeakUp Telegram bot (the “Find Partner” button) so it can verify your account.
         </p>
         <button
-          onClick={() => { setPhase("loading"); loadAll().then(() => setPhase("ready")).catch((e) => { setErrorMsg(e instanceof ApiError ? e.message : "Could not reach the server"); setPhase("error"); }); }}
-          className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl"
+          onClick={handleRetry}
+          className="bg-orange-500 text-white text-sm font-semibold px-6 py-3 rounded-2xl flex items-center gap-2"
         >
+          <Loader2 className="w-4 h-4" />
           Try again
         </button>
       </Centered>
     );
   }
 
-  // ---- Call overlay ----
-  if (call) {
-    return (
-      <div className="dark fixed inset-0 bg-background flex flex-col" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
-        <CallScreen partner={call.partner} sessionId={call.sessionId} onEnd={handleEndCall} />
-      </div>
-    );
-  }
-
-  // ---- Finding overlay ----
+  // ---- Voice call overlay (matchmaking + WebRTC) ----
   if (finding) {
     return (
-      <div className="dark fixed inset-0 bg-background flex flex-col" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
-        <FindingPartnerScreen
-          onMatched={(sessionId, partner) => { findingRef.current = false; setFinding(false); setCall({ sessionId, partner }); }}
-          onCancel={() => { findingRef.current = false; setFinding(false); }}
-          onError={(msg) => { findingRef.current = false; setFinding(false); setErrorMsg(msg); }}
-        />
+      <div className="fixed inset-0 bg-background flex flex-col">
+        <VoiceOverlay onClose={() => { findingRef.current = false; setFinding(false); loadAll().catch(() => {}); }} />
       </div>
     );
   }
 
+  const closeSub = () => { setSub(null); loadAll().catch(() => {}); };
+
   const renderMain = () => {
+    if (sub === "premium") return <PremiumScreen user={user} onBack={closeSub} />;
+    if (sub === "progress") return <ProgressScreen onBack={closeSub} />;
+    if (sub === "history") return <CallHistoryScreen history={history} onBack={closeSub} />;
+    if (sub === "feedback") return <FeedbackScreen onBack={closeSub} />;
+    if (sub === "questions") return <QuestionsBrowser onBack={() => setSub(null)} />;
     switch (activeNav) {
       case "speaking":
-        return <SpeakingScreen user={user} history={history} onFindPartner={() => { if (!findingRef.current) { findingRef.current = true; setFinding(true); } }} />;
+        return <SpeakingScreen user={user} history={history} onChanged={() => { loadAll().catch(() => {}); }} onOpenQuestions={() => setSub("questions")} onFindPartner={() => { if (!findingRef.current) { findingRef.current = true; setFinding(true); } }} />;
       case "leaderboard":
         return <LeaderboardScreen />;
       case "invite":
         return <InviteScreen user={user} />;
       case "profile":
-        return <ProfileScreen user={user} />;
+        return <ProfileScreen user={user} onOpen={setSub} />;
     }
   };
 
   return (
-    <div className="dark fixed inset-0 bg-background flex flex-col" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="fixed inset-0 bg-background flex flex-col">
       <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: "touch" }}>
         {renderMain()}
       </div>
-      <BottomNav active={activeNav} onChange={setActiveNav} />
+      <BottomNav active={activeNav} onChange={(t) => { setSub(null); setActiveNav(t); }} />
     </div>
   );
 }
