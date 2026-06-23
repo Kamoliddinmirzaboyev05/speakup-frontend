@@ -29,12 +29,14 @@ import {
   ChevronLeft,
   ChevronRight,
   BookOpen,
+  ImagePlus,
 } from "lucide-react";
 
 import {
   api,
   ApiError,
   BOT_USERNAME,
+  callImageUrl,
   type User,
   type SessionHistoryItem,
   type Leaderboard,
@@ -244,36 +246,44 @@ function AppSkeleton() {
 }
 
 function LeaderboardSkeleton() {
+  // Mirrors LeaderboardScreen's real layout so nothing jumps on load: a podium
+  // (2nd / 1st-with-crown / 3rd, avatar+name+bar) above a scrollable row list.
   return (
-    <div className="px-4 pt-2 space-y-4">
-      <div className="flex items-end justify-center gap-3 h-28">
-        <div className="flex flex-col items-center gap-1.5 flex-1">
-          <Skeleton className="w-10 h-10 rounded-full" />
-          <Skeleton className="h-2.5 w-12" />
-          <Skeleton className="w-full h-16 rounded-t-xl" />
-        </div>
-        <div className="flex flex-col items-center gap-1.5 flex-1">
-          <Skeleton className="w-14 h-14 rounded-full" />
-          <Skeleton className="h-2.5 w-12" />
-          <Skeleton className="w-full h-24 rounded-t-xl" />
-        </div>
-        <div className="flex flex-col items-center gap-1.5 flex-1">
-          <Skeleton className="w-10 h-10 rounded-full" />
-          <Skeleton className="h-2.5 w-12" />
-          <Skeleton className="w-full h-12 rounded-t-xl" />
+    <>
+      <div className="px-4 pb-4 pt-2">
+        <div className="flex items-end justify-center gap-3">
+          {/* 2nd — Avatar md + bar h-16 */}
+          <div className="flex flex-col items-center gap-1.5 flex-1">
+            <Skeleton className="w-10 h-10 rounded-full" />
+            <Skeleton className="h-3 w-12" />
+            <Skeleton className="w-full h-16 rounded-t-xl" />
+          </div>
+          {/* 1st — Crown + Avatar lg + bar h-24 */}
+          <div className="flex flex-col items-center gap-1.5 flex-1">
+            <Skeleton className="w-5 h-5 rounded-md" />
+            <Skeleton className="w-14 h-14 rounded-full" />
+            <Skeleton className="h-3 w-14" />
+            <Skeleton className="w-full h-24 rounded-t-xl" />
+          </div>
+          {/* 3rd — Avatar md + bar h-12 */}
+          <div className="flex flex-col items-center gap-1.5 flex-1">
+            <Skeleton className="w-10 h-10 rounded-full" />
+            <Skeleton className="h-3 w-12" />
+            <Skeleton className="w-full h-12 rounded-t-xl" />
+          </div>
         </div>
       </div>
-      <div className="space-y-2">
-        {[0, 1, 2, 3, 4].map((i) => (
+      <div className="flex-1 overflow-y-auto px-4 space-y-2 pb-2">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="bg-card border border-border rounded-2xl p-3 flex items-center gap-3">
-            <Skeleton className="w-5 h-4" />
+            <Skeleton className="w-7 h-4" />
             <Skeleton className="w-8 h-8 rounded-full" />
             <Skeleton className="h-3 flex-1 max-w-[120px]" />
-            <Skeleton className="h-3 w-14" />
+            <Skeleton className="h-3 w-12" />
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -405,6 +415,14 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
   const [rateBusy, setRateBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [stars, setStars] = useState(0); // selected rating, 0 = none yet
+  const [lightbox, setLightbox] = useState<string | null>(null); // enlarged image id
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onPickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) v.sendImage(f);
+    e.target.value = ""; // allow re-picking the same file
+  };
 
   const submitRating = async () => {
     if (rateBusy) return;
@@ -565,6 +583,42 @@ function VoiceOverlay({ onClose }: { onClose: () => void }) {
       </div>
 
       <InCallTopic onHaptic={() => haptic("light")} />
+
+      {/* Shared-image strip: tap the tile to upload a photo of your questions;
+          it shows for both peers. Tap a thumbnail to enlarge. */}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+      <div className="w-full max-w-sm flex items-center gap-2 overflow-x-auto py-1">
+        <button
+          onClick={() => { haptic("light"); fileRef.current?.click(); }}
+          disabled={v.uploadingImage}
+          className="shrink-0 w-16 h-16 rounded-xl border-2 border-dashed border-border bg-secondary flex flex-col items-center justify-center gap-0.5 text-muted-foreground disabled:opacity-60"
+        >
+          {v.uploadingImage
+            ? <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
+            : <><ImagePlus className="w-5 h-5" /><span className="text-[9px]">Rasm</span></>}
+        </button>
+        {v.images.map((img) => (
+          <button
+            key={img.id}
+            onClick={() => { haptic("light"); setLightbox(img.id); }}
+            className={cn(
+              "shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2",
+              img.mine ? "border-orange-500/50" : "border-blue-500/50"
+            )}
+          >
+            <img src={callImageUrl(img.id)} alt="" className="w-full h-full object-cover" />
+          </button>
+        ))}
+      </div>
+
+      {lightbox && (
+        <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <img src={callImageUrl(lightbox)} alt="" className="max-w-full max-h-full rounded-lg object-contain" />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 flex items-center justify-center text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center gap-4">
         <button onClick={() => { haptic("light"); v.toggleMute(); }}

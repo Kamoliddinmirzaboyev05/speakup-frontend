@@ -15,6 +15,13 @@ export interface VoicePartner {
   name: string;
 }
 
+// An image shared during the call. `mine` = this user uploaded it (vs. received
+// from the partner) so the UI can align/label it.
+export interface SharedImage {
+  id: string;
+  mine: boolean;
+}
+
 // Live connection quality, derived from WebRTC getStats (RTT / jitter / loss).
 export type ConnQuality = "unknown" | "good" | "poor" | "bad";
 
@@ -45,9 +52,12 @@ export interface VoiceCall {
   error: string;
   remoteStream: MediaStream | null;
   quality: ConnQuality;
+  images: SharedImage[];
+  uploadingImage: boolean;
   start: () => void;
   hangup: () => void;
   toggleMute: () => void;
+  sendImage: (file: File) => void;
 }
 
 export function useVoiceCall(): VoiceCall {
@@ -58,6 +68,8 @@ export function useVoiceCall(): VoiceCall {
   const [error, setError] = useState("");
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [quality, setQuality] = useState<ConnQuality>("unknown");
+  const [images, setImages] = useState<SharedImage[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const ws = useRef<WebSocket | null>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
@@ -152,14 +164,10 @@ export function useVoiceCall(): VoiceCall {
     peer.ontrack = (e) => {
       setRemoteStream(e.streams[0]);
       setState("in_call");
-      // Keep the receive jitter buffer small so audio stays low-latency on
-      // good links (browsers sometimes inflate it). NetEQ still grows it under
-      // real loss; this just removes needless baseline delay.
-      try {
-        for (const r of peer.getReceivers()) {
-          if ("jitterBufferTarget" in r) (r as any).jitterBufferTarget = 0;
-        }
-      } catch { /* not supported on this browser */ }
+      // NOTE: do NOT force jitterBufferTarget=0 here. On Telegram's in-app
+      // webview (older Chromium) a 0-target starves NetEQ and the remote audio
+      // plays back silent even though packets arrive — that was the "connects,
+      // timer runs, no sound" regression. Let the browser pick the buffer.
       if (!timer.current) {
         setElapsed(0);
         timer.current = setInterval(() => setElapsed((x) => x + 1), 1000);
@@ -220,6 +228,7 @@ export function useVoiceCall(): VoiceCall {
     setError("");
     setPartner(null);
     setState("searching");
+    setImages([]);
     preMsgs.current = [];
     pendingIce.current = [];
     try {
@@ -264,6 +273,10 @@ export function useVoiceCall(): VoiceCall {
           if (pc.current) await applySignal(msg);
           else preMsgs.current.push(msg); // buffer until peer is ready
           break;
+        case "image":
+          // Partner shared a photo of their questions → show it on both sides.
+          if (msg.id) setImages((xs) => [...xs, { id: msg.id, mine: false }]);
+          break;
         case "partner_left":
           teardownPeer();
           setState("ended");
@@ -291,11 +304,27 @@ export function useVoiceCall(): VoiceCall {
     if (track) { track.enabled = !track.enabled; setMuted(!track.enabled); }
   }, []);
 
+  // Upload a photo + tell the partner over the signaling socket. Both sides then
+  // render it from /api/rtc/image/<id>. A loader shows while the upload is live.
+  const sendImage = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    setUploadingImage(true);
+    try {
+      const id = await api.uploadCallImage(file);
+      setImages((xs) => [...xs, { id, mine: true }]);
+      send({ type: "image", id });
+    } catch {
+      /* upload failed — nothing to show; user can retry */
+    } finally {
+      setUploadingImage(false);
+    }
+  }, []);
+
   // Cleanup on unmount.
   useEffect(() => () => {
     try { ws.current?.close(); } catch { /* noop */ }
     teardownPeer();
   }, [teardownPeer]);
 
-  return { state, partner, elapsed, muted, error, remoteStream, quality, start, hangup, toggleMute };
+  return { state, partner, elapsed, muted, error, remoteStream, quality, images, uploadingImage, start, hangup, toggleMute, sendImage };
 }

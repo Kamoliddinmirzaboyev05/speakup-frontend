@@ -188,6 +188,25 @@ export const api = {
       body: JSON.stringify({ partner_id, rating }),
     }),
 
+  // Upload an in-call image (multipart). Returns its id; the caller relays the
+  // id to the partner over the RTC WebSocket. No Content-Type header — the
+  // browser sets the multipart boundary itself.
+  uploadCallImage: async (file: File): Promise<string> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`${BASE}/api/rtc/image`, {
+      method: "POST",
+      headers: { Authorization: `tma ${initData()}` },
+      body: fd,
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try { detail = (await res.json())?.detail ?? detail; } catch { /* noop */ }
+      throw new ApiError(res.status, detail);
+    }
+    return ((await res.json()) as { id: string }).id;
+  },
+
   getProgress: () => req<Progress>("/api/users/progress"),
   postFeedback: (rating: number, text: string) =>
     req<{ ok: boolean }>("/api/feedback", { method: "POST", body: JSON.stringify({ rating, text }) }),
@@ -200,6 +219,11 @@ export interface Progress {
   total_sessions: number;
   streak: number;
   best_day: number;
+}
+
+// Public URL for a shared in-call image (loads in an <img src> — no auth header).
+export function callImageUrl(id: string): string {
+  return `${BASE}/api/rtc/image/${id}`;
 }
 
 // WebSocket URL for real-time voice signaling (carries initData as a query
